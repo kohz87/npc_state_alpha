@@ -6,6 +6,10 @@ Build a standalone Alpha extension from the architecture in [core-contract.md](c
 
 The core contract is the single behavior owner. This workplan defines sequence, evidence and completion criteria; it must not accumulate competing runtime rules. A later explicit user instruction takes precedence, with the core and affected tests updated deliberately.
 
+**Development-record amendment — 9 September 2026**
+
+Keep S0–S10 and existing completed work. This revision makes C08–C13 development records, retention, selective review and next-request availability explicit; it also adds C03 adapter verification and C16 multi-turn cost acceptance. It does not move fields between automatic writers. If S1 already exists, implement its schema/fixture amendment as a bounded follow-up under the user's current stage authorization; do not restart S0, overwrite newer instructions, begin S2 implicitly or bump a released schema blindly. Reconcile actual code and document versions before applying these generated files.
+
 **Execution scope**
 
 Implement the complete first usable Alpha release, including both extraction paths, settings/UI, source validation, durable storage, branch/recovery behavior, narrowly scoped import support, tests, documentation and an installable package. Complete reviewable commits and the normal release/deployment workflow when authorized and verified. Do not stop at a scaffold or architecture proposal.
@@ -34,6 +38,8 @@ Before wiring providers:
 - Define NEW local reference resolution, stable-ID existing references and permitted sources.
 - Define the compact explicit zero-relationship evaluation.
 - Define the separate development target/no-op receipt shape.
+- Define C08 observation/disposition/support-link records and target/source progress, with optional explicit subset scope. Use shared source references; do not mirror the dossier or require exhaustive observation classifications.
+- Define supported structured-source segment metadata/permissions and rejection fixtures without assuming an unverified external format.
 - Define audit mode masks and field-level outcomes.
 - Define transient currentPresentation versus canonical appearance/forms and the known currentForm selector.
 - Define terminal lifecycle structure without livingReturn.
@@ -49,6 +55,7 @@ Produce focused fixtures early for:
 - New form observed before a durable form definition exists.
 - Death, mistaken victim, contradictory lifecycle output and attempted resurrection.
 - Development observation, direct durable establishment and later enrichment.
+- Observation-to-accepted-field support references, contradiction/supersession structure and narrowly scoped review receipts.
 - Malformed/missing/duplicate machine trailer.
 
 This stage ends with a reviewable executable contract, not a large folder scaffold.
@@ -64,6 +71,8 @@ Create a small source tree around real responsibilities. Suggested groups, to me
 - state/history: schema, storage/CAS, user ownership, checkpoints/recovery;
 - host/UI: SillyTavern hooks, routing, rendering and settings;
 - diagnostics/scripts/tests.
+
+Store the development record within this shared model/evidence/history system. Reuse source identity and commit machinery; do not add a per-NPC filesystem service, vector database, independent memory process or a second profile authority for this amendment.
 
 No dependency on external Beta/legacy runtime files. No wrappers around a copied monolithic Beta engine.
 
@@ -101,6 +110,8 @@ Implement:
 6. Durable pending development references for accepted relevant NPCs.
 7. Rendering/injection that excludes machine transport from narrative.
 
+Immediate pending capture does not add durable-field classification to the trailer. At dispatch, inject a coherent accepted-state snapshot per C10; pending observations stay private to development. A late successful review updates the UI and becomes available to the next request without another provider call.
+
 Handle streaming completion, continued responses, swipe/regeneration, reused positions, duplicate host events and chat switches. Source fingerprints and trailer handling must agree. No speculative stream fragment changes state.
 
 Do not regenerate the roleplay or issue a dedicated automatic scanner when the trailer is missing/malformed. Preserve the story, expose extraction failure and provide Retry immediate using the same exact owned exchange and fast authority. Protect already accepted siblings and scores from replay.
@@ -118,11 +129,18 @@ Implement C08–C10:
 - Bounded oldest-first batches; start with at most six exchanges per request.
 - One in-flight development request per active chat; coalesced triggers.
 - Targeted current comparison values, locks, refs and owned prior observations.
+- Persistent observation/disposition/accepted-support links using the C08 schema; accepted values remain in the dossier.
+- New narrative reviewed against the compact eligible-domain menu; detailed comparison/observation context selected per C13 without lexical exclusion of unexpected facts.
+- Observation-only follow-up narrowed to linked fields/dependencies; unchanged unresolved material does not trigger repeated automatic reviews by itself.
 - Small no-op target receipts instead of routine per-field negative lists.
+- Restricted reviews acknowledge only their actual field/source scope; excluded or deferred work remains pending.
 - Direct first-review establishment, tentative observations and supported later enrichment.
+- Observation extraction and supported field promotion in the same request; no collection/promotion pipeline of extra model calls.
 - Atomic receipt/observation/profile/graph commit; unresolved work stays visibly pending.
 - Reload/pause/resume, backlog limits, source-unavailable status and bounded failure/retry behavior.
 - No second full chat copy or generic raw-evidence database.
+
+Implement C09 retention before permitting consolidation or pruning. Reuse exact owned evidence; preserve unresolved observations, accepted support, contradiction links and recoverable checkpoints. Consolidation may be proposed inside the scheduled review, never by an added automatic summarizer. Fail with explicit deferred/unavailable scope when necessary evidence cannot be supplied. Do not substitute the visible Memories field, chat-summary text or accepted dossier prose for original event evidence.
 
 An early first-contact review is intentional and nonblocking. It is not a return to the old automatic full-dossier completeness-repair loop. Subsequent ordinary reviews ask only for durable deltas from the pending scope.
 
@@ -154,6 +172,7 @@ Build the minimal usable dossier list/editor/settings UI:
 - Give immediate failure a bounded retry action.
 - Keep diagnostics inspectable without filling the ordinary interface with transport metadata.
 - Explain unknown/unreviewed fields without pretending they were found unavailable.
+- Surface accepted development after commit; show pending review status without presenting tentative observations as established personality.
 
 Implement settings from one registry:
 - Alpha enabled and admission policy;
@@ -176,6 +195,7 @@ Prove:
 - User corrections/locks/portraits/manual deletion remain user-owned.
 - Terminal death does not prevent correcting a mistake or undoing a removed death scene.
 - Storage/CAS conflicts and history changes during saving never produce false success.
+- Consolidation, dispositions and support links restore with their associated field revisions; rollback leaves neither orphan evidence links nor future-derived profile conclusions.
 - Missing trustworthy baseline requires explicit recovery rather than fabricated history.
 
 Implement an explicit importer for the documented selected Beta schema/version range using exported fixture copies. Preserve supported values and ownership; report unsupported/inconsistent fields. Establish a new labeled Alpha import baseline and replay boundary. Do not fabricate old checkpoints or provenance.
@@ -187,6 +207,10 @@ Never modify the Beta sidecar or silently activate Alpha. Document how the user 
 Keep the roleplay prompt free of durable-review/audit rubrics. Keep routine development free of full fieldEvaluations. Keep complete source evidence and required comparison context within supported limits.
 
 Serialize refs/values, locks and profile evidence once. Use bounded identity hints and detail preferences. Compile only exact recognized stock rubrics; preserve custom criteria intact or report supported-context limitations.
+
+Implement optional structured adapters through C03's shared source boundary. First verify actual Megumin samples and preserve its field firewall. Inspect a real Freaky Frankenstein format or authoritative schema before implementing/enabling that adapter; if unavailable, document it as unsupported and complete the narration/Megumin path. Do not invent a parser from the product name. Record each claimed format/version and exact fixtures. Recognized malformed/control blocks must not fall through as visible evidence. Test current/stale/conflicting representations, same-event copies and absence of either suite. No additional source-discovery LLM call or hard dependency is permitted.
+
+Demonstrate that a large retained development record does not automatically become a large prompt. Select necessary observations/supporting excerpts while preserving sufficient narrative context. New narrative must still permit facts in any eligible durable domain; insufficient comparison context causes a scoped deferral rather than an unsafe replacement or silent omission.
 
 Do not apply semantic keyword gating to skip death, a new NPC, rare family facts or profile development. Do not create an LLM pre-classifier to make context selection appear cheaper.
 
@@ -212,9 +236,14 @@ Do not trade missed changes or additional retry work for a smaller first prompt.
 | Dynamic | Zero-score neutral establishment, wrong addressee, shared/quoted-you sources, historical review grounding and no Refresh bypass |
 | Appearance | Current presentation preserved during late durable change, scoped forms, unknown form pending, no transient canonical rewrite |
 | Evolution | Direct first-review facts, one-off observation, explicit/reinforced mannerisms, same-source replay, coherent single-scene support, later enrichment, sustained change and no arbitrary encounter threshold |
+| Development record | Survives reload independently of visible Memories; tentative observation is not an accepted trait; explicit fact establishes without recurrence; support/contradiction links bind valid revisions; no extra collection/promotion call |
+| Selective review | New fact outside existing field links remains discoverable; first-contact field menu retained; subset receipts do not clear excluded work; unresolved observation alone does not loop; deferred replacements preserve unseen existing values |
+| Structured adapters | Verified format recognition, no-suite narration path, allowed field use, malformed-block quarantine, structured-only admission/death rejection, stale/conflicting context, no double recurrence from the same event copied into world state |
+| Retention | Bounded selected context despite a larger record; consolidation preserves qualifications and contradictions; missing owned evidence defers; invalidated sources cannot survive through cached excerpts; pruning respects support/replay/checkpoint dependencies |
 | Memories/graph | Distinct dated events, same-event refinement, durable registration/access, directional custom family/social ties, locked/unresolved endpoints, no invented members/reciprocity |
 | Queue | New-NPC early trigger, cadence, coalescing, reload, partial target completion, zero-change receipt, backlog/unavailable source, bounded retries and no loss of pending evidence |
 | Background concurrency | Later fast commit survives; same durable dependency change defers; unrelated live change permits valid commit; death/deletion/manual lock/source change rejects dependent stale work |
+| Next-request availability | Completed review visible in next dispatch with zero retrieval scan calls; unfinished review does not block; post-dispatch commit leaves sent prompt unchanged; tentative observations never injected as established facts |
 | Checkpoints | Late review actual boundary, tail deletion, middle divergence, surviving suffix, pending receipt rollback, no future knowledge and no false pre-import baseline |
 | Persistence | Atomic source/updates/receipts, CAS conflicts, stale-before-save, changed-during-save, no false checkpoint or UI success |
 | Settings/UI | Auto/numeric/invalid normalization, soft overflow, provider route failure, new-dossier pending display, conflicting extension ownership |
@@ -238,6 +267,8 @@ Compare identical starting states, narratives, locks, settings and model paramet
 4. Queue wait/backlog age and foreground interference.
 5. Total requests/tokens across fast and development paths, including retries.
 6. First-response fast accuracy and eventual durable accuracy.
+
+Add multi-turn progression fixtures with equal source coverage and final backlog, including new admission, context-dependent speech, one-off mood versus lasting behavior, contradiction and accepted evolution. Report total input/output/reasoning tokens, requests and accepted coverage across the segment, including foreground overhead, retries and cancellations where usage is exposed. Include a repeated narration/world-state event and a large retained observation record. Compare selective context/batching against broader review using matched sources and evaluate deferred detail latency. Do not claim savings merely because one variant left more work pending.
 
 Use simple continuation, one-field update, two-NPC interaction, new admission, profile evolution, terminal death, structured evidence and crowded scenes. Interleave variants; start with at least five repetitions per ordinary fixture when live access exists. Report model/provider configuration and sample size. Evaluate Gemini models separately.
 

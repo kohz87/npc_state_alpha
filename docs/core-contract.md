@@ -2,6 +2,8 @@
 
 **Contract status:** intended Alpha v1 behavior, established before implementation. This document specifies the target; it is not evidence that the features already exist. Initial release target is 0.1.0 unless the repository has advanced. Storage schema, settings schema and each model wire contract have independent explicit versions.
 
+**Development-record amendment — 9 September 2026:** defines persistent field development, selective review, optional structured-source adapters and multi-turn cost measurement. C02 automatic field ownership is unchanged, including development ownership of Relationship Dynamic and role/species/ages/birthday. Apply this amendment to the actual repository baseline without overwriting newer unrelated changes. Do not restart completed stages or change a shipped schema without an explicit version/migration decision.
+
 **C01. Purpose and scope**
 
 Alpha is a standalone SillyTavern NPC continuity extension. It combines a small structured delta emitted with the roleplay response and a separate focused review for durable dossier development.
@@ -52,6 +54,14 @@ Runtime resolves supplied references and verifies excerpts against permitted sou
 The authoritative assistant narrative excludes Alpha's machine trailer. The trailer cannot cite itself or become story evidence, and future roleplay prompts must not replay it as narrative. Transport exclusion must be deterministic, narrowly scoped and identical across parsing, fingerprinting and prompt assembly.
 
 Visible USER/ASSISTANT narrative supports ordinary meaning. Optional structured sources have declared authority: World_State may corroborate live location/status/placement; Inner_Chatter may support private mood/goal and appropriate relationship interpretation. Neither independently admits an NPC, proves physical presence, establishes visible gestures/speech or rewrites durable canon. Other control/import/dossier blocks are excluded from automatic narrative extraction. Keep structured-only death out of automatic authority in the initial Alpha contract; death needs owned narrative evidence.
+
+Structured integrations are optional boundary adapters into this same source resolver, never independent writers. Implement Megumin against verified format fixtures. Enable a Freaky Frankenstein adapter only after inspecting its actual supported format and adding equivalent fixtures; an unverified format remains explicitly unsupported. No runtime dependency on either suite is required. Ordinary narration remains sufficient.
+
+Each supported adapter declares format/version recognition, source segment kinds and permitted field authority. Preserve original source coordinates/excerpts and message/swipe/revision identity through normalization. Recognized structured/control blocks with unsupported or malformed contents stay quarantined; do not relabel them as visible narration on parse failure. Do not guess unknown schemas or claim to detect every unrecognized dialect.
+
+Use structured context according to field permission, not blanket structured-first priority. The model resolves target meaning and supported temporal changes; runtime validates declared source ownership and permissions. Conflicts without sufficient support preserve the affected accepted field and may yield an unresolved observation. A fresher timestamp alone does not establish semantic truth. Durable profile synthesis still requires permitted narrative evidence; copied structured descriptions are not an authority escalation.
+
+Narration and a derived world-state/inner-state representation of the same event are not independent recurrence. Runtime deduplicates exact source replays and explicitly identified copies; semantic same-event grouping remains model-owned. When independence is uncertain, do not use the extra representation as proof of an established habit. Accepted dossier text and extension-generated summaries are comparison context, not fresh event evidence.
 
 Source membership proves provenance, not entailment. Identity, negation, actual victim, durable pattern and relationship meaning remain model judgments. Do not claim an exact quote prevents every semantic error.
 
@@ -119,9 +129,24 @@ Memories retain consequential promises, rescues, betrayals, discoveries, obligat
 
 Key relationships/social/family facts remain non-player, directional, source-grounded and lock-aware. No invented gender, biology, members, reciprocity or count-to-person expansion. Make connected graph/dossier updates atomic; a blocked counterpart must not leave a contradictory half-edge.
 
+Maintain a persistent per-NPC development record within the shared Alpha state. It supports non-memory profile evolution without relying on the visible Memories field or a chat-summary extension. It remains dependent on owned evidence and history correctness. This is a logical record, not a requirement for one physical file per NPC or a second copy of the dossier.
+
+The schema must express these responsibilities, using shared source/entry references rather than duplicated structures:
+
+| Component | Required information | Authority |
+| --- | --- | --- |
+| Observation | Stable runtime-assigned ID, accepted NPC ID, eligible field, concise observation, permitted source refs/excerpts and model-proposed same-event links where supported | Model proposes meaning; runtime validates and persists |
+| Evidence disposition | Tentative/supporting/contradicting/superseded role, linked accepted field revision or observation IDs when applicable | Model proposes interpretation; runtime enforces valid references |
+| Review progress | Pending and reviewed target/source scope; explicit field subset only for deliberately restricted reviews; deferred/unavailable scope | Runtime bookkeeping from validated receipts |
+| Accepted support | Links between committed field revisions and their supporting/qualifying evidence | Shared commit coordinator; accepted value remains in the canonical dossier |
+
+Use equivalent concise names in the executable schema; do not require every observation to fill every optional classification. A supporting observation is not itself an accepted field change. Persist accepted updates and support links together. Explicit facts can establish at the first review; tentative patterns can accumulate across turns; contradictory context can narrow or revise an interpretation. No observation count, numeric confidence threshold or elapsed time mechanically promotes a trait.
+
+Immediate capture enqueues owned evidence only; it does not classify durable observations. Development performs observation extraction and supported promotion in the same request where possible. Do not add a separate collection call, mandatory promotion call or per-field scan. An existing unresolved observation need not be re-reviewed repeatedly without new relevant evidence, an affected dependency change or an explicit manual review.
+
 **C09. Pending evidence and scheduling**
 
-Persist a compact pending-review ledger in the same Alpha sidecar. Entries refer to accepted identities and immutable owned exchanges; they do not duplicate full raw chat or create a second general memory store. Store bounded observations in the existing-style profile evidence store after review.
+Persist the C08 development record and compact pending-review ledger in the same Alpha sidecar. Entries refer to accepted identities and immutable owned exchanges. Use the shared evidence store for observations and support links, not a second raw-chat archive or independent memory service.
 
 Represent pending per-target/source scope so partial batches cannot mark unseen NPCs or later exchanges reviewed. Failed/unresolved immediate extraction remains separately visible; do not silently manufacture admission in the development scanner.
 
@@ -141,6 +166,12 @@ A transient failure remains pending with bounded diagnostics. Do not automatical
 
 Keep the ledger bounded by compact range/receipt representation and explicit backlog controls. Never silently evict unreviewed sources. If backlog exceeds supported limits, retain a durable pending-range marker and report backlog/paused status until reviewed or explicitly dismissed. If source text is no longer available, mark that scope unavailable; never replace it with an unrelated summary or fabricated evidence. Trim receipts/observations only under documented safe retention rules.
 
+Retention must distinguish storage from prompt context. Keep unresolved observations and evidence needed for accepted support or reachable rollback boundaries; select only relevant material for each request. Runtime may compact identical references and processed ranges mechanically. Semantic consolidation is a development proposal within an already scheduled review, preserving distinct facts, qualifications, contradiction links and original source ownership; never run an extra automatic summarization request just to shrink the record.
+
+If an observation cites an older exchange, supply the necessary exact owned evidence and enough narrative context for interpretation. Observation wording alone cannot become a replacement quotation. A retained excerpt remains usable only with verifiable owning lineage; deleted/invalidated sources cannot survive as current evidence merely because their text was cached. If required support cannot be supplied within budget, split/defer the affected review and retain pending scope. Do not call it reviewed successfully.
+
+Only prune superseded material when live support links, unresolved work, replay protection and supported checkpoint recovery remain valid. Document and test these preconditions. Prefer a compact reference or explicit capacity pause to silent evidence loss. An unavailable source blocks new unsupported synthesis; it does not automatically erase an accepted field. Actual source invalidation follows C11 rollback/reconciliation.
+
 **C10. Concurrency and commit boundary**
 
 Capture source dependencies, target identity, read-field/domain revisions and intended operation authority at review dispatch. Validate provider results outside the commit lock, then revalidate all dependencies at commit against the latest durable state.
@@ -155,9 +186,13 @@ Accepted proposals, observations, queue receipts, scoring replay keys and the re
 
 Operational leases, storage revisions, writer locks and in-flight jobs are not historical story state. Invalidations cancel/discard work; stale jobs cannot overwrite newer UI status.
 
+Surface accepted development as soon as its atomic commit succeeds. At each roleplay dispatch, build continuity from one coherent latest committed snapshot; include accepted relevant details without issuing or awaiting a development scan. Tentative observations and unresolved contradictions are private review context, not established traits injected into roleplay. If review is unfinished, use the prior accepted durable values plus committed immediate state. A commit after dispatch affects a later request, never a prompt already sent. Background work requires an active supported host; this contract does not introduce an always-on server worker.
+
 **C11. History, checkpoints and correction**
 
 Use one complete story snapshot/checkpoint system for admission, live/durable state, relationships, lifecycle, graphs, memories, observations, replay records and pending/reviewed work.
+
+Development dispositions, accepted-support links and consolidation replacements participate in that same history boundary. Undoing a consolidation restores the corresponding earlier observations and review scope where required; no orphan support links or future-derived summaries may remain. Runtime job status is reconstructed separately from restored durable progress.
 
 Each checkpoint records the actual current history boundary at which its state is committed plus source dependencies. A development result based on earlier exchanges must not be inserted retroactively into an old checkpoint or future evidence attributed to an earlier source. A later checkpoint may include that accepted result at its real commit boundary.
 
@@ -184,6 +219,10 @@ Manual Refresh cannot change numeric scores, presence or lifecycle through a bro
 One compact continuity projection serves the roleplay model: relevant identities, current state and a small relevant durable context, followed by the fast contract. No full development extraction rubric belongs there.
 
 Development gets the target comparison values, relevant owned observations, exact edit refs, locks and bounded pending narratives. Include each ref/value/lock/evidence record once. Current/source text is complete within supported request limits; unavailable context is marked rather than treated as blank.
+
+For new pending narrative, retain a compact menu of all eligible durable domains so an unexpected birthday, family fact or speech pattern remains discoverable. Do not infer a restrictive field mask from keywords or the absence of earlier observations. Narrow detailed comparison context using accepted target IDs, existing field links, source scope and explicit review selection. Model-led new facts in any eligible domain remain permitted, subject to sufficient comparison context and safe operation preconditions; defer an unsafe replacement instead of overwriting unseen state. On first contact, supply the complete compact eligible-field menu and permit direct establishment in one review.
+
+For observation follow-up without new narrative, use the linked fields and explicitly relevant dependencies. Do not inject the entire accumulated development record or repeatedly scan resolved material. If a request intentionally covers only a field subset, its receipt acknowledges only that subset and source scope. Normal routine receipts remain target/source acknowledgments without exhaustive per-field classifications. Limits may split work but cannot falsely acknowledge excluded evidence.
 
 A single Routine dossier detail budget setting defaults to Auto, with numeric preference 1–20. Auto aims near four detailed existing records in ordinary scenes. This is a soft context preference, not a maximum stored/updated NPC count. Relevant identity ambiguities, participants and required comparison details may exceed it. Supply lightweight identity context for additional relevant records, including deceased identities. Never drop a fifth NPC's supported change merely to enforce four.
 
@@ -217,12 +256,16 @@ Use one bounded runtime operation ledger. Record operation/mode, model route ide
 
 Capture provider input/output/reasoning usage only when actually exposed by host services. Missing usage is unavailable. Avoid double-counting reasoning inside provider completion totals. Full prompts/chat/credentials are not logged by default.
 
+Also record supplied versus retained observation counts, pending exchanges/targets, reviewed scope, semantic-update count, field-evaluation count, retry/cancellation usage where exposed and context-overflow deferrals. Keep the ledger bounded; do not expose private observation text in ordinary diagnostics.
+
 Measure:
 - Time to first visible roleplay output and completion.
 - Time from roleplay completion to committed immediate state.
 - Background review request/commit duration and backlog age.
 - Total tokens/requests across both paths.
 - First-response extraction correctness and eventual durable correctness.
+
+Assess development cost over the same multi-turn story segment with matched starting state, model parameters and final pending backlog. Include one-pass prompt/trailer overhead, development calls, retries, canceled billed work when exposed and work required to reach the same accepted coverage. Report foreground wait and delayed detail availability separately. Fewer foreground requests or postponed reviews alone do not demonstrate lower total cost. Report tokens directly; monetary estimates require a stated applicable rate and must not invent missing provider usage.
 
 Compare no-extension/continuity-only, Beta reference and Alpha variants under identical narratives, state/settings/models where feasible. A lower scanner latency does not prove lower total cost or faster visible generation. Sub-10-second thinking and 30–50% reasoning reduction are hypotheses for experiments, never claims without measurements.
 

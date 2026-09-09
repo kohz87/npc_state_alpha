@@ -19,6 +19,8 @@ Read `docs/core-contract.md` before architecture, implementation, tests, or main
 - Background review never owns immediate presence, live state, numeric relationship scoring, or lifecycle transitions.
 - Keep terminal automatic death, with explicit user correction and owned-history rollback distinct from narrative resurrection.
 - New NPC review, queued evidence ownership, concurrent commits and checkpoint behavior must follow the core contract. Do not hold storage locks while waiting for a provider.
+- Keep per-NPC development records within the shared state/history system. Follow C08–C13 for evidence retention, selective review and accepted-state injection; do not create another memory service or promote observations by counts.
+- Optional structured-source adapters follow C03 field permissions. They cannot broaden automatic authority or turn repeated summaries into independent evidence.
 - Reuse verified runtime subsystems selectively. Trace transitive dependencies and adapt them to Alpha's contract before porting.
 - No runtime import, fetch or build dependency on Beta or the legacy repository. Keep required licenses and attribution from reused source.
 - Do not copy the whole Beta engine or legacy prompt system and wrap it in a new facade.
@@ -52,4 +54,3 @@ Read `docs/core-contract.md` before architecture, implementation, tests, or main
 - Before a release, verify the exact candidate tree, package contents, dependency reachability and current remote state. Follow repository protections; never force-push over unrelated work.
 - Lack of required release verification leaves publication pending; finish other authorized work and identify the blocker.
 - Report actual changes, version/commit, checks, performance evidence and material limits. Do not call a scaffold a working extension or estimated prompt savings a measured reasoning improvement.
-
