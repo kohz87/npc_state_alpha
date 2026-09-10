@@ -1,12 +1,12 @@
 /**
- * NPC State Alpha — S1 Repository Validation Script
+ * NPC State Alpha — S3 Repository Validation Script
  *
  * Verifies:
  * - Module imports and dependency reachability
  * - Version consistency between package.json, wire contracts, and documentation
  * - Canonical C02 ownership coverage
  * - Production wire examples validity
- * - Absence of accidental S2+ runtime scaffolding or external runtime dependencies
+ * - Absence of accidental S4+ runtime scaffolding or external runtime dependencies
  */
 
 import fs from 'node:fs';
@@ -18,7 +18,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 async function runValidation() {
-  console.log('--- NPC State Alpha: S2 Repository Validation ---');
+  console.log('--- NPC State Alpha: S3 Repository Validation ---');
   let errors = 0;
 
   function fail(msg) {
@@ -268,23 +268,94 @@ async function runValidation() {
   }
   pass(`All ${requiredS2Functions.length} S2 runtime primitives verified.`);
 
-  // 7. Check that S3+ directories have NOT been created prematurely
-  const forbiddenS3Paths = [
+  // 7. S3 Host Integration Positive Checks
+  let host;
+  try {
+    host = await import('../src/host/index.js');
+    pass('src/host/index.js imported successfully.');
+  } catch (err) {
+    fail(`Failed to import src/host/index.js: ${err.message}`);
+    return 1;
+  }
+
+  const requiredS3Classes = [
+    'SillyTavernAdapter',
+    'SillyTavernStorageAdapter',
+    'PromptInjector',
+    'DiagnosticsLedger',
+    'computeContentFingerprint',
+    'buildPrecedingLineage',
+  ];
+
+  for (const name of requiredS3Classes) {
+    if (typeof host[name] !== 'function') {
+      fail(`Expected S3 host export '${name}' to be a function/class, found ${typeof host[name]}`);
+    }
+  }
+  pass(`All ${requiredS3Classes.length} S3 host primitives verified.`);
+
+  // Verify root entrypoint index.js
+  let rootIndex;
+  try {
+    rootIndex = await import('../index.js');
+    if (typeof rootIndex.initExtension !== 'function' || typeof rootIndex.getActiveAdapter !== 'function') {
+      fail('Root index.js missing initExtension or getActiveAdapter export.');
+    } else {
+      pass('Root index.js exports initExtension and getActiveAdapter.');
+    }
+  } catch (err) {
+    fail(`Failed to import root index.js: ${err.message}`);
+  }
+
+  // Verify manifest.json integrity & neutral attribution
+  const manifestPath = path.join(rootDir, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    fail('manifest.json is missing.');
+  } else {
+    try {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      if (manifest.js !== 'index.js') {
+        fail(`manifest.json 'js' expected 'index.js', got '${manifest.js}'`);
+      }
+      if (manifest.generate_interceptor !== 'npc_state_alpha_generate_interceptor') {
+        fail(`manifest.json 'generate_interceptor' expected 'npc_state_alpha_generate_interceptor', got '${manifest.generate_interceptor}'`);
+      }
+      if (typeof manifest.author === 'string' && manifest.author.toLowerCase().includes('deepmind')) {
+        fail("manifest.json author must not claim Google DeepMind (neutral attribution required).");
+      } else {
+        pass('manifest.json verified with valid entrypoint, interceptor key, and neutral attribution.');
+      }
+    } catch (e) {
+      fail(`Failed to parse manifest.json: ${e.message}`);
+    }
+  }
+
+  // Verify packaging script exists
+  const packageScriptPath = path.join(rootDir, 'scripts/package.js');
+  if (!fs.existsSync(packageScriptPath)) {
+    fail('scripts/package.js packaging script is missing.');
+  } else {
+    pass('scripts/package.js exists.');
+  }
+
+  // 8. Explicit S4+ absence checks (no S4 Development background queue, S5 UI, S6 importer)
+  const forbiddenS4Paths = [
     'src/queue',
+    'src/development/queue.js',
+    'src/development/provider.js',
     'src/ui',
-    'src/host',
     'src/importer',
     'src/packaging',
   ];
 
-  for (const p of forbiddenS3Paths) {
+  for (const p of forbiddenS4Paths) {
     if (fs.existsSync(path.join(rootDir, p))) {
-      fail(`Accidental S3+ directory created prematurely: ${p}`);
+      fail(`Accidental S4+ path created prematurely: ${p}`);
     }
   }
-  pass('Confirmed no accidental S3+ runtime directories exist.');
+  pass('Confirmed no accidental S4+ runtime modules exist (S4 queue, S5 UI, S6 importer deferred).');
 
-  console.log(`--- S2 Validation finished with ${errors} error(s) ---`);
+  console.log(`--- S3 Validation finished with ${errors} error(s) ---`);
   return errors === 0 ? 0 : 1;
 }
 
