@@ -10,3 +10,4 @@ export * from './audit-modes.js';
 export * from './parser.js';
 export * from './validator.js';
 export * from './examples.js';
+export * from './settings.js';

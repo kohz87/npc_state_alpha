@@ -23,6 +23,12 @@ export const DIAGNOSTIC_EVENT_TYPES = Object.freeze({
   CHAT_SWITCHED: 'chat_switched',
   GENERATION_INTERCEPTED: 'generation_intercepted',
   GENERATION_STOPPED: 'generation_stopped',
+  DEVELOPMENT_DISPATCHED: 'development_dispatched',
+  DEVELOPMENT_COMMITTED: 'development_committed',
+  DEVELOPMENT_FAILED: 'development_failed',
+  DEVELOPMENT_PAUSED: 'development_paused',
+  DEVELOPMENT_COALESCED: 'development_coalesced',
+  DEVELOPMENT_YIELDED: 'development_yielded',
 });
 
 const DEFAULT_CAPACITY = 100;
@@ -67,6 +73,12 @@ export class DiagnosticsLedger {
       replaysSuppressed: 0,
       chatSwitches: 0,
       generationsIntercepted: 0,
+      developmentDispatched: 0,
+      developmentCommitted: 0,
+      developmentFailed: 0,
+      developmentPaused: 0,
+      developmentCoalesced: 0,
+      developmentYielded: 0,
     };
   }
 
@@ -121,6 +133,24 @@ export class DiagnosticsLedger {
         break;
       case DIAGNOSTIC_EVENT_TYPES.GENERATION_INTERCEPTED:
         this.counts.generationsIntercepted++;
+        break;
+      case DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_DISPATCHED:
+        this.counts.developmentDispatched++;
+        break;
+      case DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_COMMITTED:
+        this.counts.developmentCommitted++;
+        break;
+      case DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_FAILED:
+        this.counts.developmentFailed++;
+        break;
+      case DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_PAUSED:
+        this.counts.developmentPaused++;
+        break;
+      case DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_COALESCED:
+        this.counts.developmentCoalesced++;
+        break;
+      case DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_YIELDED:
+        this.counts.developmentYielded++;
         break;
     }
 

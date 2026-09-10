@@ -68,6 +68,15 @@ export function resetObservationIdCounterForTesting() {
   observationIdCounter = 0;
 }
 
+function hasAcceptedFieldValue(npc, fieldName) {
+  const value = npc?.[fieldName];
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim() !== '';
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value).length > 0;
+  return true;
+}
+
 /**
  * Centralized extractor that extracts all concrete S1 SourceReference objects
  * from an already validated envelope with their target canonical field (Task 3).
@@ -251,6 +260,7 @@ export class CommitCoordinator {
    * @param {string} params.writer Writer authority ('one_pass', 'development', 'user', 'runtime')
    * @param {number} [params.expectedRevision] Expected storage revision for CAS concurrency safety
    * @param {object} [params.readFieldRevisions] Map of { [targetId]: { [field]: revisionNumber } } captured at dispatch
+   * @param {object} [params.readFieldDependencies] Cross-field dependency map { [targetId]: { [proposedField]: { [dependencyField]: revisionNumber } } }
    * @param {Array<object>} [params.identityProposals] Identity proposals (for NEW admissions or existing targets)
    * @param {object} [params.fieldProposals] Map of { [targetRefOrId]: { [fieldName]: value } }
    * @param {Array<object>} [params.observations] Proposed C08 observations
@@ -260,6 +270,8 @@ export class CommitCoordinator {
    * @param {Array<string|object>} [params.sourceDependencies] Source references or captured dependency descriptors
    * @param {Array<string>} [params.dedupKeys] Logical deduplication keys
    * @param {Array<object>} [params.pendingReviewEntries] Runtime pending review entries
+   * @param {Array<object>} [params.pendingReviewResolutions] Exact pending entries to clear after a matching non-deferred receipt
+   * @param {Array<object>} [params.pendingReviewUpdates] Runtime-only metadata patches for pending entries
    * @param {object} [params.exchangeContext] Live exchange context for revalidation
    * @param {string} [params.operationMode] 'one_pass' | 'development' | 'manual'
    * @returns {Promise<object>} Commit outcome receipt
@@ -268,6 +280,7 @@ export class CommitCoordinator {
     writer,
     expectedRevision,
     readFieldRevisions,
+    readFieldDependencies,
     identityProposals = [],
     fieldProposals = {},
     observations = [],
@@ -277,6 +290,8 @@ export class CommitCoordinator {
     sourceDependencies = [],
     dedupKeys = [],
     pendingReviewEntries = [],
+    pendingReviewResolutions = [],
+    pendingReviewUpdates = [],
     exchangeContext,
     operationMode = 'commit',
   }) {
@@ -375,6 +390,31 @@ export class CommitCoordinator {
       }
     }
 
+    if (readFieldDependencies !== undefined) {
+      if (!readFieldDependencies || typeof readFieldDependencies !== 'object' || Array.isArray(readFieldDependencies)) {
+        return {
+          success: false,
+          error: "CommitCoordinator 'readFieldDependencies' must be an object map when supplied.",
+          errorCode: 'invalid_read_field_dependency',
+        };
+      }
+      for (const [targetKey, proposedFields] of Object.entries(readFieldDependencies)) {
+        if (!proposedFields || typeof proposedFields !== 'object' || Array.isArray(proposedFields)) {
+          return { success: false, error: `Read field dependencies for target '${targetKey}' must be an object map.`, errorCode: 'invalid_read_field_dependency' };
+        }
+        for (const [proposedField, dependencies] of Object.entries(proposedFields)) {
+          if (!CANONICAL_FIELDS[proposedField] || !dependencies || typeof dependencies !== 'object' || Array.isArray(dependencies)) {
+            return { success: false, error: `Invalid cross-field dependency declaration for '${targetKey}.${proposedField}'.`, errorCode: 'invalid_read_field_dependency' };
+          }
+          for (const [dependencyField, revision] of Object.entries(dependencies)) {
+            if (!CANONICAL_FIELDS[dependencyField] || !Number.isInteger(revision) || revision <= 0) {
+              return { success: false, error: `Invalid cross-field dependency revision for '${targetKey}.${proposedField}' -> '${dependencyField}'.`, errorCode: 'invalid_read_field_dependency' };
+            }
+          }
+        }
+      }
+    }
+
     // Automatic candidate admission is One-Pass-owned. Development may review
     // only already accepted stable identities at this low-level boundary.
     if (writer === WRITERS.DEVELOPMENT && Array.isArray(identityProposals)) {
@@ -418,6 +458,27 @@ export class CommitCoordinator {
           error: "WRITERS.ONE_PASS cannot author direct 'reviewReceipts'; reserved for Runtime/Development writer.",
         };
       }
+    }
+
+    // S4 pending-ledger ownership. One-Pass may enqueue accepted scope but never
+    // drains or rewrites existing Development work. Metadata failure/unavailable
+    // patches are Runtime-owned bookkeeping; Development may request exact
+    // resolutions only through validated receipts in this same atomic commit.
+    if (Array.isArray(pendingReviewResolutions) && pendingReviewResolutions.length > 0 && writer !== WRITERS.DEVELOPMENT) {
+      return {
+        success: false,
+        error: "Pending Development review resolution is reserved for the Development transaction boundary.",
+        errorCode: 'pending_review_resolution_wrong_writer',
+      };
+    }
+    if (Array.isArray(pendingReviewUpdates) && pendingReviewUpdates.length > 0 && writer !== WRITERS.RUNTIME) {
+      return { success: false, error: "Pending review metadata updates are reserved for WRITERS.RUNTIME." };
+    }
+    if (!Array.isArray(pendingReviewResolutions)) {
+      return { success: false, error: "'pendingReviewResolutions' must be an array." };
+    }
+    if (!Array.isArray(pendingReviewUpdates)) {
+      return { success: false, error: "'pendingReviewUpdates' must be an array." };
     }
 
     // Strict dedupKeys validation (Task 8)
@@ -678,6 +739,82 @@ export class CommitCoordinator {
       }
     }
 
+    // 3c. Validate exact S4 pending-ledger resolution/update requests against the
+    // latest durable pending set before any semantic field mutation is accepted.
+    const currentPendingEntries = workingState.pendingReview?.entries || [];
+    const pendingById = new Map();
+    for (const entry of currentPendingEntries) {
+      if (entry?.id) pendingById.set(entry.id, entry);
+    }
+
+    const normalizedPendingResolutions = [];
+    const seenResolutionIds = new Set();
+    for (let i = 0; i < pendingReviewResolutions.length; i++) {
+      const resolution = pendingReviewResolutions[i];
+      if (!resolution || typeof resolution !== 'object' || Array.isArray(resolution)) {
+        return { success: false, error: `Invalid pendingReviewResolution at index ${i}: must be an object.` };
+      }
+      const allowedKeys = ['id', 'targetId', 'sourceScope'];
+      for (const key of Object.keys(resolution)) {
+        if (!allowedKeys.includes(key)) {
+          return { success: false, error: `Invalid pendingReviewResolution at index ${i}: unknown key '${key}'.` };
+        }
+      }
+      if (typeof resolution.id !== 'string' || resolution.id.trim() === '') {
+        return { success: false, error: `Invalid pendingReviewResolution at index ${i}: requires non-empty string 'id'.` };
+      }
+      if (seenResolutionIds.has(resolution.id)) {
+        return { success: false, error: `Duplicate pending review resolution id '${resolution.id}'.` };
+      }
+      seenResolutionIds.add(resolution.id);
+      const existing = pendingById.get(resolution.id);
+      if (!existing) {
+        return { success: false, error: `Pending review resolution '${resolution.id}' does not exist in latest state.` };
+      }
+      if (resolution.targetId !== undefined && resolution.targetId !== existing.targetId) {
+        return { success: false, error: `Pending review resolution '${resolution.id}' target mismatch.` };
+      }
+      if (resolution.sourceScope !== undefined) {
+        if (!Array.isArray(resolution.sourceScope) || !resolution.sourceScope.every((s) => typeof s === 'string' && s.trim() !== '')) {
+          return { success: false, error: `Pending review resolution '${resolution.id}' sourceScope must be an array of non-empty strings.` };
+        }
+        const existingScope = Array.isArray(existing.sourceScope) ? existing.sourceScope : [];
+        const exactScope = resolution.sourceScope.length === existingScope.length &&
+          resolution.sourceScope.every((s, idx) => s === existingScope[idx]);
+        if (!exactScope) {
+          return { success: false, error: `Pending review resolution '${resolution.id}' sourceScope does not match latest pending scope.` };
+        }
+      }
+      normalizedPendingResolutions.push({ id: resolution.id, entry: existing });
+    }
+
+    const normalizedPendingUpdates = [];
+    const seenUpdateIds = new Set();
+    for (let i = 0; i < pendingReviewUpdates.length; i++) {
+      const update = pendingReviewUpdates[i];
+      if (!update || typeof update !== 'object' || Array.isArray(update)) {
+        return { success: false, error: `Invalid pendingReviewUpdate at index ${i}: must be an object.` };
+      }
+      const allowedKeys = ['id', 'metadataPatch'];
+      for (const key of Object.keys(update)) {
+        if (!allowedKeys.includes(key)) {
+          return { success: false, error: `Invalid pendingReviewUpdate at index ${i}: unknown key '${key}'.` };
+        }
+      }
+      if (typeof update.id !== 'string' || update.id.trim() === '' || seenUpdateIds.has(update.id)) {
+        return { success: false, error: `Invalid or duplicate pendingReviewUpdate id at index ${i}.` };
+      }
+      seenUpdateIds.add(update.id);
+      const existing = pendingById.get(update.id);
+      if (!existing) {
+        return { success: false, error: `Pending review update '${update.id}' does not exist in latest state.` };
+      }
+      if (!update.metadataPatch || typeof update.metadataPatch !== 'object' || Array.isArray(update.metadataPatch)) {
+        return { success: false, error: `Pending review update '${update.id}' requires object metadataPatch.` };
+      }
+      normalizedPendingUpdates.push({ id: update.id, metadataPatch: structuredClone(update.metadataPatch) });
+    }
+
     // 4. Revalidate read dependencies against latest state (C10)
     // Item C: Field-scoped stale read dependency handling.
     // A stale/missing read token for proposed field X defers X only;
@@ -715,8 +852,8 @@ export class CommitCoordinator {
       // Check read-field dependencies if provided (e.g. from background review dispatch)
       // Item C: field-scoped - only defer specific fields whose read tokens are stale
       const fieldsToApply = {};
-      if (readFieldRevisions && readFieldRevisions[targetKey]) {
-        const expectedFields = readFieldRevisions[targetKey];
+      if ((readFieldRevisions && readFieldRevisions[targetKey]) || (readFieldDependencies && readFieldDependencies[targetKey])) {
+        const expectedFields = readFieldRevisions?.[targetKey] || {};
         for (const [fieldName, proposalValue] of Object.entries(fields)) {
           if (fieldName === 'id' || fieldName === 'localRef') {
             fieldsToApply[fieldName] = proposalValue;
@@ -737,7 +874,35 @@ export class CommitCoordinator {
               continue; // Skip this field, apply others
             }
           }
-          // Field has matching read token or no read dependency declared for it
+
+          const crossDependencies = readFieldDependencies?.[targetKey]?.[fieldName];
+          if (crossDependencies && typeof crossDependencies === 'object') {
+            let dependencyConflict = null;
+            for (const [dependencyField, expectedDependencyRevision] of Object.entries(crossDependencies)) {
+              const currentDependencyRevision = targetNpc.fieldRevisions?.[dependencyField];
+              if (currentDependencyRevision === undefined || currentDependencyRevision !== expectedDependencyRevision) {
+                dependencyConflict = {
+                  dependencyField,
+                  expectedDependencyRevision,
+                  currentDependencyRevision,
+                };
+                break;
+              }
+            }
+            if (dependencyConflict) {
+              deferredProposals.push({
+                targetId: assignedId,
+                field: fieldName,
+                dependencyField: dependencyConflict.dependencyField,
+                expectedRev: dependencyConflict.expectedDependencyRevision,
+                currentFieldRev: dependencyConflict.currentDependencyRevision,
+                reason: 'dependent_read_changed',
+              });
+              continue;
+            }
+          }
+
+          // Field has matching direct and cross-field dependencies (or none declared).
           fieldsToApply[fieldName] = proposalValue;
         }
         // Also track stale deps on fields declared in readFieldRevisions but NOT in proposals
@@ -761,6 +926,63 @@ export class CommitCoordinator {
 
       if (Object.keys(fieldsToApply).filter(k => k !== 'id' && k !== 'localRef').length > 0) {
         targetsToApply.set(assignedId, fieldsToApply);
+      }
+    }
+
+    // Read dependencies may guard observation/support-only Development work even
+    // when the response contains no scalar proposal for that field. Revalidate
+    // those non-proposed fields too so stale evidence cannot enter C08 records.
+    if (readFieldRevisions) {
+      for (const [targetKey, expectedFields] of Object.entries(readFieldRevisions)) {
+        // Targets already present in fieldProposals were fully checked above,
+        // including declared read tokens for non-proposed sibling fields.
+        if (Object.prototype.hasOwnProperty.call(fieldProposals, targetKey)) continue;
+        const proposedFields = {};
+        const assignedId = resolvedIdentityMap.get(targetKey)?.assignedId || targetKey;
+        const targetNpc = workingState.npcs[assignedId];
+        if (!targetNpc) {
+          return { success: false, error: `Read dependency target '${assignedId}' does not exist in state.` };
+        }
+        for (const [fieldName, expectedRev] of Object.entries(expectedFields)) {
+          if (Object.prototype.hasOwnProperty.call(proposedFields, fieldName)) continue;
+          const currentFieldRev = targetNpc.fieldRevisions?.[fieldName];
+          if (currentFieldRev === undefined || currentFieldRev !== expectedRev) {
+            deferredProposals.push({
+              targetId: assignedId,
+              field: fieldName,
+              expectedRev,
+              currentFieldRev,
+              reason: currentFieldRev === undefined ? 'read_dependency_missing' : 'read_dependency_changed',
+            });
+          }
+        }
+      }
+    }
+    if (readFieldDependencies) {
+      for (const [targetKey, proposedDependencyMap] of Object.entries(readFieldDependencies)) {
+        const proposedFields = fieldProposals[targetKey] || {};
+        const assignedId = resolvedIdentityMap.get(targetKey)?.assignedId || targetKey;
+        const targetNpc = workingState.npcs[assignedId];
+        if (!targetNpc) {
+          return { success: false, error: `Cross-field dependency target '${assignedId}' does not exist in state.` };
+        }
+        for (const [guardedField, dependencies] of Object.entries(proposedDependencyMap)) {
+          if (Object.prototype.hasOwnProperty.call(proposedFields, guardedField)) continue;
+          for (const [dependencyField, expectedDependencyRevision] of Object.entries(dependencies)) {
+            const currentDependencyRevision = targetNpc.fieldRevisions?.[dependencyField];
+            if (currentDependencyRevision === undefined || currentDependencyRevision !== expectedDependencyRevision) {
+              deferredProposals.push({
+                targetId: assignedId,
+                field: guardedField,
+                dependencyField,
+                expectedRev: expectedDependencyRevision,
+                currentFieldRev: currentDependencyRevision,
+                reason: 'dependent_read_changed',
+              });
+              break;
+            }
+          }
+        }
       }
     }
 
@@ -797,6 +1019,17 @@ export class CommitCoordinator {
       }
     }
 
+    // Consolidate field-scoped stale/locked outcomes before any C08 observation
+    // or support record is persisted. Observation-only work must obey the same
+    // dependency gate as scalar proposals.
+    const deferredFieldsByTarget = new Map(); // targetId -> Map<fieldName, reason>
+    for (const dp of deferredProposals) {
+      if (!deferredFieldsByTarget.has(dp.targetId)) {
+        deferredFieldsByTarget.set(dp.targetId, new Map());
+      }
+      deferredFieldsByTarget.get(dp.targetId).set(dp.field, dp.reason);
+    }
+
     // 6. Process C08 Development Observations
     // Assign persistent runtime IDs and resolve request-local observation references (C08)
     const localRefToPersistentIdMap = new Map();
@@ -812,6 +1045,20 @@ export class CommitCoordinator {
         return { success: false, error: `Observation target '${targetId}' not found in state.` };
       }
 
+      // Validate the field before any stale-result skip so malformed low-level
+      // input cannot hide behind a dependency conflict.
+      if (!isDurableDossierField(obs.field)) {
+        return {
+          success: false,
+          error: `Observation field '${obs.field}' must target an eligible Development durable field; observations ledger is not valid target.`,
+        };
+      }
+      const obsBaseField = obs.field.split('.')[0];
+      const targetDeferredFields = deferredFieldsByTarget.get(targetId);
+      if (targetDeferredFields && (targetDeferredFields.has(obs.field) || targetDeferredFields.has(obsBaseField))) {
+        continue;
+      }
+
       const persistentId = generateObservationId();
       const localKey = obs.localObservationRef;
       if (localKey) {
@@ -822,14 +1069,6 @@ export class CommitCoordinator {
           field: obs.field,
           baseField: obs.field ? obs.field.split('.')[0] : '',
         });
-      }
-
-      // Check if target field is an eligible durable field (MEDIUM 5 & LOW 9)
-      if (!isDurableDossierField(obs.field)) {
-        return {
-          success: false,
-          error: `Observation field '${obs.field}' must target an eligible Development durable field; observations ledger is not valid target.`,
-        };
       }
 
       const { localObservationRef, localObsRef, localRef, ...restObs } = obs;
@@ -886,13 +1125,6 @@ export class CommitCoordinator {
     // Development callers propose supportProposals; Runtime builds acceptedSupport records
     // with actual committed fieldRevision and resolved observation IDs.
     // Item B: Use field-scoped affected/deferred bookkeeping, not coarse target poisoning
-    const deferredFieldsByTarget = new Map(); // targetId -> Set<fieldName> with reasons
-    for (const dp of deferredProposals) {
-      if (!deferredFieldsByTarget.has(dp.targetId)) {
-        deferredFieldsByTarget.set(dp.targetId, new Map());
-      }
-      deferredFieldsByTarget.get(dp.targetId).set(dp.field, dp.reason);
-    }
     const runtimeAcceptedSupport = [];
 
     for (const prop of supportProposals) {
@@ -1018,6 +1250,18 @@ export class CommitCoordinator {
         suppRecord.notes = prop.notes;
       }
 
+      // Accepted support qualifies an actual canonical value/revision. This runs
+      // after reference validation so malformed links retain their more specific
+      // failure, but before any support record can be persisted. Scalar proposals
+      // have already applied to workingState, so same-transaction establishment is valid.
+      if (!hasAcceptedFieldValue(npc, baseField)) {
+        return {
+          success: false,
+          error: `Support proposal field '${baseField}' has no accepted durable value to support.`,
+          errorCode: 'support_without_accepted_value',
+        };
+      }
+
       const suppVal = validatePersistedAcceptedSupportRecord(suppRecord);
       if (!suppVal.valid) {
         return {
@@ -1038,6 +1282,12 @@ export class CommitCoordinator {
         }
 
         const baseField = supp.field.split('.')[0];
+        if (!isDurableDossierField(baseField)) {
+          return {
+            success: false,
+            error: `Accepted support field '${supp.field}' must target an eligible Development durable field.`,
+          };
+        }
         const committedFieldRev = String(npc.fieldRevisions?.[baseField] || '1');
         if (supp.fieldRevision !== undefined && String(supp.fieldRevision) !== committedFieldRev) {
           return {
@@ -1111,6 +1361,17 @@ export class CommitCoordinator {
         delete persistedSupp.localObsRef;
         delete persistedSupp.localRef;
 
+        // Runtime may own the persisted support record, but it cannot create a
+        // support link for an unknown canonical value. Revision/reference errors
+        // above remain more specific and therefore take precedence.
+        if (!hasAcceptedFieldValue(npc, baseField)) {
+          return {
+            success: false,
+            error: `Accepted support field '${baseField}' has no accepted durable value to support.`,
+            errorCode: 'support_without_accepted_value',
+          };
+        }
+
         const suppVal = validatePersistedAcceptedSupportRecord(persistedSupp);
         if (!suppVal.valid) {
           return {
@@ -1132,6 +1393,7 @@ export class CommitCoordinator {
     }
 
     // 8. Process Review Receipts (Runtime owned)
+    const persistedReviewReceipts = [];
     for (const receipt of reviewReceipts) {
       const targetId = resolvedIdentityMap.get(receipt.targetId)?.assignedId || receipt.targetId;
       if (workingState.tombstones && workingState.tombstones[targetId]) {
@@ -1179,20 +1441,134 @@ export class CommitCoordinator {
         }
       }
 
-      if (shouldDeferReceipt) {
-        // Deferred targets or locked fields are NOT marked reviewed (Finding 6, Task 7)
-        npc.development.reviewReceipts.push({
-          ...receipt,
-          targetId,
-          status: 'deferred',
-          committedAt: new Date().toISOString(),
-        });
-      } else {
-        npc.development.reviewReceipts.push({
-          ...receipt,
-          targetId,
-          committedAt: new Date().toISOString(),
-        });
+      const persistedReceipt = shouldDeferReceipt
+        ? {
+            ...receipt,
+            targetId,
+            status: 'deferred',
+            committedAt: new Date().toISOString(),
+          }
+        : {
+            ...receipt,
+            targetId,
+            committedAt: new Date().toISOString(),
+          };
+      npc.development.reviewReceipts.push(persistedReceipt);
+      persistedReviewReceipts.push(persistedReceipt);
+    }
+
+    // 8b. Apply Runtime-only pending metadata updates and Development resolution
+    // requests inside this same transaction. A pending source can disappear only
+    // when an exact latest entry is covered by a non-deferred validated receipt.
+    for (const update of normalizedPendingUpdates) {
+      const pendingEntry = workingState.pendingReview.entries.find((entry) => entry?.id === update.id);
+      if (!pendingEntry) {
+        return { success: false, error: `Pending review update '${update.id}' disappeared before atomic apply.` };
+      }
+      pendingEntry.metadata = {
+        ...(pendingEntry.metadata && typeof pendingEntry.metadata === 'object' ? pendingEntry.metadata : {}),
+        ...update.metadataPatch,
+      };
+    }
+
+    const resolvedPendingReviewIds = [];
+    const deferredPendingReviewIds = [];
+    for (const resolution of normalizedPendingResolutions) {
+      const pendingEntry = workingState.pendingReview.entries.find((entry) => entry?.id === resolution.id);
+      if (!pendingEntry) {
+        return { success: false, error: `Pending review resolution '${resolution.id}' disappeared before atomic apply.` };
+      }
+      const pendingScope = Array.isArray(pendingEntry.sourceScope) ? pendingEntry.sourceScope : [];
+      const matchingReceipts = persistedReviewReceipts.filter((receipt) => {
+        if (receipt.targetId !== pendingEntry.targetId) return false;
+        const receiptScope = Array.isArray(receipt.sourceScope) ? receipt.sourceScope : [];
+        if (!pendingScope.every((sourceRef) => receiptScope.includes(sourceRef))) return false;
+        if (Array.isArray(pendingEntry.fieldSubset) && pendingEntry.fieldSubset.length > 0) {
+          // An unrestricted receipt covers every durable field and therefore also
+          // covers a previously restricted pending subset. A restricted receipt
+          // must explicitly include the entire pending subset.
+          if (receipt.restricted === true) {
+            if (!Array.isArray(receipt.fieldSubset)) return false;
+            if (!pendingEntry.fieldSubset.every((field) => receipt.fieldSubset.includes(field))) return false;
+          }
+        } else if (receipt.restricted === true) {
+          // A restricted receipt cannot clear an unrestricted pending source scope.
+          return false;
+        }
+        return true;
+      });
+      const successReceipt = matchingReceipts.find((receipt) =>
+        receipt.status === 'reviewed' || receipt.status === 'reviewed_no_proposals'
+      );
+      if (successReceipt) {
+        // A source can be successfully reviewed while still yielding tentative or
+        // contradicting profile evidence. Keep that exact owned source pending,
+        // narrowed to only the unresolved observation fields, instead of either
+        // losing the provenance or automatically re-reviewing it in a loop.
+        const npc = workingState.npcs[pendingEntry.targetId];
+        const pendingSubset = new Set(
+          Array.isArray(pendingEntry.fieldSubset)
+            ? pendingEntry.fieldSubset.map((field) => String(field).split('.')[0])
+            : [],
+        );
+        const appliedFields = appliedFieldsByTarget.get(pendingEntry.targetId) || new Set();
+        const acceptedSupportRecords = npc?.development?.acceptedSupport || [];
+        const supportedObservationIds = new Set(
+          acceptedSupportRecords.flatMap((support) => support.supportingObservationIds || []),
+        );
+        const unresolvedObservationFields = new Set();
+
+        for (const observation of npc?.development?.observations || []) {
+          const sourceRef = observation?.source?.sourceRef;
+          if (!sourceRef || !pendingScope.includes(sourceRef)) continue;
+          const baseField = String(observation.field || '').split('.')[0];
+          if (!baseField || (pendingSubset.size > 0 && !pendingSubset.has(baseField))) continue;
+          if (appliedFields.has(observation.field) || appliedFields.has(baseField)) continue;
+          if (supportedObservationIds.has(observation.id)) continue;
+          const sourceNowSupportsField = acceptedSupportRecords.some((support) =>
+            String(support.field || '').split('.')[0] === baseField &&
+            Array.isArray(support.sourceRefs) &&
+            support.sourceRefs.includes(sourceRef)
+          );
+          if (sourceNowSupportsField) continue;
+          const dispositionRole = observation.disposition?.role;
+          if (dispositionRole === 'supporting' || dispositionRole === 'superseded') continue;
+          unresolvedObservationFields.add(baseField);
+        }
+
+        if (unresolvedObservationFields.size > 0) {
+          const deferredFields = [...unresolvedObservationFields].sort();
+          pendingEntry.reason = 'observation_followup';
+          pendingEntry.fieldSubset = deferredFields;
+          pendingEntry.metadata = {
+            ...(pendingEntry.metadata && typeof pendingEntry.metadata === 'object' ? pendingEntry.metadata : {}),
+            lastReviewStatus: 'deferred',
+            lastReviewAt: successReceipt.committedAt,
+            deferredFields,
+            followupKind: 'observation',
+          };
+          delete pendingEntry.metadata.lastFailureCode;
+          delete pendingEntry.metadata.lastFailureAt;
+          delete pendingEntry.metadata.lastUnavailableAt;
+          deferredPendingReviewIds.push(resolution.id);
+          continue;
+        }
+
+        workingState.pendingReview.entries = workingState.pendingReview.entries.filter((entry) => entry?.id !== resolution.id);
+        resolvedPendingReviewIds.push(resolution.id);
+        continue;
+      }
+
+      const deferredReceipt = matchingReceipts.find((receipt) => receipt.status === 'deferred');
+      if (deferredReceipt) {
+        const affected = deferredFieldsByTarget.get(pendingEntry.targetId);
+        pendingEntry.metadata = {
+          ...(pendingEntry.metadata && typeof pendingEntry.metadata === 'object' ? pendingEntry.metadata : {}),
+          lastReviewStatus: 'deferred',
+          lastReviewAt: deferredReceipt.committedAt,
+          deferredFields: affected ? [...affected.keys()] : [],
+        };
+        deferredPendingReviewIds.push(resolution.id);
       }
     }
 
@@ -1248,6 +1624,8 @@ export class CommitCoordinator {
       deferred: deferredProposals,
       observationIds: persistedObservations.map((o) => o.id),
       assignedNpcs: idResolution.assignedNpcs,
+      resolvedPendingReviewIds,
+      deferredPendingReviewIds,
     };
   }
 
@@ -1260,10 +1638,12 @@ export class CommitCoordinator {
    * @param {object} params.envelope Validated S1 envelope
    * @param {object} [params.exchangeContext]
    * @param {object} [params.readFieldRevisions]
+   * @param {object} [params.readFieldDependencies]
    * @param {number} [params.expectedRevision]
    * @param {Array<object>} [params.reviewReceipts]
    * @param {Array<string>} [params.dedupKeys]
    * @param {Array<object>} [params.pendingReviewEntries]
+   * @param {Array<object>} [params.pendingReviewResolutions]
    * @returns {Promise<object>}
    */
   async commitValidatedEnvelope({
@@ -1272,10 +1652,12 @@ export class CommitCoordinator {
     exchangeContext,
     capturedDependencies,
     readFieldRevisions,
+    readFieldDependencies,
     expectedRevision,
     reviewReceipts = [],
     dedupKeys = [],
     pendingReviewEntries = [],
+    pendingReviewResolutions = [],
   }) {
     if (!envelope || typeof envelope !== 'object') {
       return { success: false, error: 'Envelope must be an object.' };
@@ -1644,6 +2026,7 @@ export class CommitCoordinator {
       writer,
       expectedRevision,
       readFieldRevisions,
+      readFieldDependencies,
       identityProposals,
       fieldProposals,
       observations,
@@ -1653,6 +2036,7 @@ export class CommitCoordinator {
       sourceDependencies,
       dedupKeys,
       pendingReviewEntries,
+      pendingReviewResolutions,
       exchangeContext,
       operationMode: writer,
     });

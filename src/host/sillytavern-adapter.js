@@ -169,6 +169,7 @@ export class SillyTavernAdapter {
       });
 
     this.interceptorKey = options.interceptorKey || DEFAULT_INTERCEPTOR_KEY;
+    this.developmentReview = options.developmentReview || null;
 
     // Runtime in-flight state tracking
     this.inFlightRequest = null;
@@ -192,6 +193,12 @@ export class SillyTavernAdapter {
     } catch {
       return null;
     }
+  }
+
+  /** Attach the S4 Development scheduler without creating another state path. */
+  setDevelopmentReview(review) {
+    this.developmentReview = review || null;
+    return this.developmentReview;
   }
 
   /**
@@ -360,6 +367,10 @@ export class SillyTavernAdapter {
         });
         return;
       }
+
+      // S4 foreground priority: abort/yield only a background Development request
+      // for this chat before the roleplay path performs any awaited work.
+      this.developmentReview?.onForegroundStart?.(chatId);
 
       // 1. Sanitize the interceptor-provided coreChat snapshot (Requirement 3, Item 8)
       // Strip only strictly recognized valid Alpha trailers from prior assistant entries
@@ -1104,6 +1115,8 @@ export class SillyTavernAdapter {
             assignedNpcs: commitResult.assignedNpcs,
           });
         }
+        // Never await background Development work on the foreground roleplay path.
+        this.developmentReview?.onImmediateCommit?.({ chatId, commitResult });
       } else {
         this.diagnostics.record({
           type: DIAGNOSTIC_EVENT_TYPES.COMMIT_FAILURE,
@@ -1190,6 +1203,7 @@ export class SillyTavernAdapter {
     if (newChatId) {
       this.reconcileCommittedTransportDisplay({ expectedChatId: newChatId }).catch(() => {});
     }
+    this.developmentReview?.onChatChanged?.(newChatId);
   }
 
   /**
@@ -1381,6 +1395,7 @@ export class SillyTavernAdapter {
       delete globalThis[this.interceptorKey];
     }
     this.inFlightRequest = null;
+    this.developmentReview?.destroy?.();
     this.initialized = false;
   }
 }

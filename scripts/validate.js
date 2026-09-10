@@ -1,12 +1,13 @@
 /**
- * NPC State Alpha — S3 Repository Validation Script
+ * NPC State Alpha — S4 Repository Validation Script
  *
  * Verifies:
  * - Module imports and dependency reachability
  * - Version consistency between package.json, wire contracts, and documentation
  * - Canonical C02 ownership coverage
  * - Production wire examples validity
- * - Absence of accidental S4+ runtime scaffolding or external runtime dependencies
+ * - S4 Development settings/queue/provider/context integration
+ * - Absence of accidental S5+ runtime scaffolding or external runtime dependencies
  */
 
 import fs from 'node:fs';
@@ -18,7 +19,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 async function runValidation() {
-  console.log('--- NPC State Alpha: S3 Repository Validation ---');
+  console.log('--- NPC State Alpha: S4 Repository Validation ---');
   let errors = 0;
 
   function fail(msg) {
@@ -169,6 +170,26 @@ async function runValidation() {
     pass("Development wire version is '1'");
   }
 
+  // S4 single settings registry invariants (C09/C14)
+  if (contract.ALPHA_SETTINGS_SCHEMA_VERSION !== 1) {
+    fail(`ALPHA_SETTINGS_SCHEMA_VERSION expected 1, got ${contract.ALPHA_SETTINGS_SCHEMA_VERSION}`);
+  } else {
+    pass('Alpha settings schema version is 1.');
+  }
+  if (contract.ALPHA_SETTINGS_DEFAULTS?.developmentCadence !== 3 ||
+      contract.DEVELOPMENT_MIN_CADENCE !== 1 ||
+      contract.DEVELOPMENT_MAX_CADENCE !== 10 ||
+      contract.DEVELOPMENT_MAX_BATCH_EXCHANGES !== 6) {
+    fail('S4 Development scheduling defaults/bounds are inconsistent with C09.');
+  } else {
+    const normalized = contract.normalizeAlphaSettings({ developmentCadence: 99 });
+    if (normalized.developmentCadence !== 10) {
+      fail('S4 settings normalization did not enforce cadence upper bound 10.');
+    } else {
+      pass('S4 Development settings registry verified: cadence default 3, range 1..10, max batch 6.');
+    }
+  }
+
   // 5. Verify production examples parse and validate
   const minEmptyParse = contract.extractAndParseOnePassTrailer(contract.ONE_PASS_MINIMAL_EMPTY_TEXT);
   if (!minEmptyParse.success) {
@@ -294,14 +315,34 @@ async function runValidation() {
   }
   pass(`All ${requiredS3Classes.length} S3 host primitives verified.`);
 
+  const requiredS4HostExports = [
+    'DevelopmentReviewQueue',
+    'SillyTavernDevelopmentProvider',
+    'buildDevelopmentDispatch',
+    'buildDevelopmentExchangeContext',
+    'selectDevelopmentBatch',
+    'deriveDevelopmentReadDependencies',
+    'validateDevelopmentResponseScope',
+  ];
+  for (const name of requiredS4HostExports) {
+    if (typeof host[name] !== 'function') {
+      fail(`Expected S4 host export '${name}' to be a function/class, found ${typeof host[name]}`);
+    }
+  }
+  pass(`All ${requiredS4HostExports.length} S4 Development host primitives verified.`);
+
   // Verify root entrypoint index.js
   let rootIndex;
   try {
     rootIndex = await import('../index.js');
-    if (typeof rootIndex.initExtension !== 'function' || typeof rootIndex.getActiveAdapter !== 'function') {
-      fail('Root index.js missing initExtension or getActiveAdapter export.');
+    if (
+      typeof rootIndex.initExtension !== 'function' ||
+      typeof rootIndex.getActiveAdapter !== 'function' ||
+      typeof rootIndex.getActiveDevelopmentReview !== 'function'
+    ) {
+      fail('Root index.js missing initExtension, getActiveAdapter, or getActiveDevelopmentReview export.');
     } else {
-      pass('Root index.js exports initExtension and getActiveAdapter.');
+      pass('Root index.js exports S3 adapter and S4 Development scheduler accessors.');
     }
   } catch (err) {
     fail(`Failed to import root index.js: ${err.message}`);
@@ -338,24 +379,22 @@ async function runValidation() {
     pass('scripts/package.js exists.');
   }
 
-  // 8. Explicit S4+ absence checks (no S4 Development background queue, S5 UI, S6 importer)
-  const forbiddenS4Paths = [
-    'src/queue',
-    'src/development/queue.js',
-    'src/development/provider.js',
+  // 8. Explicit S5+ absence checks. S4 Development orchestration is now expected.
+  const forbiddenS5Paths = [
     'src/ui',
     'src/importer',
+    'src/history-rebuild',
     'src/packaging',
   ];
 
-  for (const p of forbiddenS4Paths) {
+  for (const p of forbiddenS5Paths) {
     if (fs.existsSync(path.join(rootDir, p))) {
-      fail(`Accidental S4+ path created prematurely: ${p}`);
+      fail(`Accidental S5+ path created prematurely: ${p}`);
     }
   }
-  pass('Confirmed no accidental S4+ runtime modules exist (S4 queue, S5 UI, S6 importer deferred).');
+  pass('Confirmed no accidental S5+ UI/history/import runtime modules exist.');
 
-  console.log(`--- S3 Validation finished with ${errors} error(s) ---`);
+  console.log(`--- S4 Validation finished with ${errors} error(s) ---`);
   return errors === 0 ? 0 : 1;
 }
 

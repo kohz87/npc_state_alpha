@@ -651,6 +651,17 @@ test('Commit Coordinator (C02, C08): rejects direct acceptedSupport from Develop
   assert.equal(devDirectRes.success, false);
   assert.match(devDirectRes.error, /Direct 'acceptedSupport' submission is reserved strictly for WRITERS.RUNTIME/);
 
+  // Establish the canonical value first; this test is about Runtime ownership of
+  // the accepted-support record, not permission to support an unknown field.
+  const establishRole = await coordinator.commit({
+    writer: WRITERS.DEVELOPMENT,
+    identityProposals: [{ id: altheaId }],
+    fieldProposals: { [altheaId]: { role: 'Archivist' } },
+  });
+  assert.equal(establishRole.success, true, establishRole.error);
+  const { state: roleState } = await adapter.load();
+  const roleRevision = String(roleState.npcs[altheaId].fieldRevisions.role);
+
   // WRITERS.RUNTIME submitting acceptedSupport succeeds
   const runtimeRes = await coordinator.commit({
     writer: WRITERS.RUNTIME,
@@ -659,7 +670,7 @@ test('Commit Coordinator (C02, C08): rejects direct acceptedSupport from Develop
       {
         targetId: altheaId,
         field: 'role',
-        fieldRevision: '1',
+        fieldRevision: roleRevision,
         sourceRefs: ['msg_1'],
         notes: 'Runtime verified role support',
       },
@@ -2392,6 +2403,16 @@ test('Commit Coordinator (Task 5): runtime acceptedSupport enforces canonical ba
   assert.equal(resMismatch.success, false);
   assert.match(resMismatch.error, /does not match canonical base-field revision '1' for 'role'/);
 
+  // Establish the dotted field's canonical base value before supporting it.
+  const personalitySet = await coordinator.commit({
+    writer: WRITERS.DEVELOPMENT,
+    identityProposals: [{ id: elenaId }],
+    fieldProposals: { [elenaId]: { personality: { traits: ['Observant'] } } },
+  });
+  assert.equal(personalitySet.success, true, personalitySet.error);
+  const { state: personalityState } = await adapter.load();
+  const personalityRevision = String(personalityState.npcs[elenaId].fieldRevisions.personality);
+
   // 2. Dotted field maps to canonical base-field revision
   const resDotted = await coordinator.commit({
     writer: WRITERS.RUNTIME,
@@ -2399,6 +2420,7 @@ test('Commit Coordinator (Task 5): runtime acceptedSupport enforces canonical ba
       {
         targetId: elenaId,
         field: 'personality.traits',
+        fieldRevision: personalityRevision,
         sourceRefs: ['msg:1'],
       },
     ],
@@ -2407,7 +2429,7 @@ test('Commit Coordinator (Task 5): runtime acceptedSupport enforces canonical ba
   const { state } = await adapter.load();
   const supp = state.npcs[elenaId].development.acceptedSupport[0];
   assert.equal(supp.field, 'personality.traits');
-  assert.equal(supp.fieldRevision, '1'); // personality base field revision is 1
+  assert.equal(supp.fieldRevision, personalityRevision); // dotted support uses the canonical personality revision
 });
 
 test('Commit Coordinator (Task 6): supportProposals.sourceRefs requires mechanically permitted segment kind for field', async () => {
