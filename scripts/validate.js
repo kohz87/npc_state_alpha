@@ -18,7 +18,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 async function runValidation() {
-  console.log('--- NPC State Alpha: S1 Repository Validation (Substantially Complete - Final Acceptance Pending) ---');
+  console.log('--- NPC State Alpha: S2 Repository Validation ---');
   let errors = 0;
 
   function fail(msg) {
@@ -206,24 +206,85 @@ async function runValidation() {
     }
   }
 
-  // 6. Check that S2 runtime files have NOT been created prematurely
-  const forbiddenS2Paths = [
-    'src/state',
-    'src/runtime',
-    'src/storage',
+  // 6. Check S2 runtime imports, state schema, storage CAS, and commit coordinator
+  let runtime;
+  try {
+    runtime = await import('../src/runtime/index.js');
+    pass('src/runtime/index.js imported successfully.');
+  } catch (err) {
+    fail(`Failed to import src/runtime/index.js: ${err.message}`);
+    return 1;
+  }
+
+  // Verify S2 state schema invariants
+  if (runtime.ALPHA_NAMESPACE !== 'npc_state_alpha.v1') {
+    fail(`ALPHA_NAMESPACE expected 'npc_state_alpha.v1', got '${runtime.ALPHA_NAMESPACE}'`);
+  } else {
+    pass("ALPHA_NAMESPACE verified as 'npc_state_alpha.v1'");
+  }
+
+  if (runtime.ALPHA_SCHEMA_VERSION !== 1) {
+    fail(`ALPHA_SCHEMA_VERSION expected 1, got ${runtime.ALPHA_SCHEMA_VERSION}`);
+  } else {
+    pass('ALPHA_SCHEMA_VERSION verified as 1');
+  }
+
+  const initialState = runtime.createInitialState();
+  const stateVal = runtime.validateState(initialState);
+  if (!stateVal.valid) {
+    fail(`createInitialState() failed validateState(): ${stateVal.errors.join('; ')}`);
+  } else {
+    pass('createInitialState() passes validateState()');
+  }
+
+  // Verify S2 storage adapter and CAS mechanics
+  const storage = new runtime.MemoryStorageAdapter();
+  const initLoad = await storage.load();
+  if (initLoad.revision !== 0 || initLoad.state.namespace !== 'npc_state_alpha.v1') {
+    fail('MemoryStorageAdapter failed initial load check.');
+  } else {
+    pass('MemoryStorageAdapter CAS initial load verified.');
+  }
+
+  // Verify S2 core primitives exist and are functions
+  const requiredS2Functions = [
+    'createDefaultNpcRecord',
+    'validateState',
+    'cloneState',
+    'createCheckpoint',
+    'validateCheckpoint',
+    'resolveSourceReference',
+    'stripMachineTrailer',
+    'resolveIdentityBatch',
+    'applyFieldProposal',
+    'applyNpcProposals',
+    'CommitCoordinator',
+  ];
+
+  for (const fnName of requiredS2Functions) {
+    if (typeof runtime[fnName] !== 'function') {
+      fail(`Expected S2 runtime export '${fnName}' to be a function, found ${typeof runtime[fnName]}`);
+    }
+  }
+  pass(`All ${requiredS2Functions.length} S2 runtime primitives verified.`);
+
+  // 7. Check that S3+ directories have NOT been created prematurely
+  const forbiddenS3Paths = [
     'src/queue',
     'src/ui',
     'src/host',
+    'src/importer',
+    'src/packaging',
   ];
 
-  for (const p of forbiddenS2Paths) {
+  for (const p of forbiddenS3Paths) {
     if (fs.existsSync(path.join(rootDir, p))) {
-      fail(`Accidental S2+ directory created prematurely: ${p}`);
+      fail(`Accidental S3+ directory created prematurely: ${p}`);
     }
   }
-  pass('Confirmed no accidental S2+ runtime directories exist.');
+  pass('Confirmed no accidental S3+ runtime directories exist.');
 
-  console.log(`--- S1 Validation finished with ${errors} error(s) (Contract Layer Verified - Final Acceptance Pending) ---`);
+  console.log(`--- S2 Validation finished with ${errors} error(s) ---`);
   return errors === 0 ? 0 : 1;
 }
 
