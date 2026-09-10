@@ -24,6 +24,7 @@ import {
 import {
   validateOnePassEnvelope,
 } from '../contract/validator.js';
+import { normalizeAlphaSettings } from '../contract/settings.js';
 import {
   stripMachineTrailer,
   captureScopeDependency,
@@ -161,19 +162,34 @@ export class SillyTavernAdapter {
       getContext: this._getContextProvider,
       fetchImpl: options.fetchImpl,
     });
+    let hostSettings = null;
+    try {
+      hostSettings = this._getContextProvider?.()?.extensionSettings?.npc_state_alpha || null;
+    } catch {}
+    this.settings = normalizeAlphaSettings({
+      ...(hostSettings || options.settings || {}),
+      admissionPolicy: (hostSettings || options.settings || {}).admissionPolicy || options.admissionPolicy || ADMISSION_POLICIES.NAMED_PREFERRED,
+    });
     this.coordinator =
       options.coordinator ||
       new CommitCoordinator({
         storage: this.storage,
-        admissionPolicy: options.admissionPolicy || ADMISSION_POLICIES.NAMED_PREFERRED,
+        admissionPolicy: this.settings.admissionPolicy,
+        settings: this.settings,
       });
+    this.coordinator.setSettings?.(this.settings);
 
     this.interceptorKey = options.interceptorKey || DEFAULT_INTERCEPTOR_KEY;
     this.developmentReview = options.developmentReview || null;
+    this._ownershipConflictDetector = typeof options.ownershipConflictDetector === 'function'
+      ? options.ownershipConflictDetector
+      : null;
+    this.ownershipConflict = options.ownershipConflict || null;
 
     // Runtime in-flight state tracking
     this.inFlightRequest = null;
     this.processedDedupKeys = new Set();
+    this.lastImmediateFailureByChat = new Map();
     this.initialized = false;
     this._registeredListeners = [];
     this._candidateProcessingQueue = Promise.resolve();
@@ -195,9 +211,54 @@ export class SillyTavernAdapter {
     }
   }
 
+  getOwnershipConflict() {
+    return this.ownershipConflict || null;
+  }
+
+  setOwnershipConflict(conflict = null) {
+    this.ownershipConflict = conflict && typeof conflict === 'object' ? { ...conflict } : null;
+    return this.ownershipConflict;
+  }
+
+  async refreshOwnershipConflict() {
+    if (typeof this._ownershipConflictDetector !== 'function') return this.getOwnershipConflict();
+    try {
+      return this.setOwnershipConflict(await this._ownershipConflictDetector());
+    } catch (error) {
+      this.diagnostics.record({
+        type: DIAGNOSTIC_EVENT_TYPES.HOST_EVENT_REJECTED,
+        reason: `Competing-owner detection unavailable: ${error?.message || error}`,
+      });
+      return this.getOwnershipConflict();
+    }
+  }
+
+  /** Reads the single host-backed Alpha settings object and normalizes it fail-safe. */
+  getRuntimeSettings() {
+    const ctx = this.getContext();
+    const hostSettings = ctx?.extensionSettings?.npc_state_alpha;
+    const normalized = hostSettings && typeof hostSettings === 'object' && !Array.isArray(hostSettings) && Object.keys(hostSettings).length > 0
+      ? normalizeAlphaSettings(hostSettings)
+      : normalizeAlphaSettings(this.settings || {});
+    if (this.ownershipConflict) {
+      return { ...normalized, developmentEnabled: false };
+    }
+    return normalized;
+  }
+
+  /** Applies settings to every live runtime consumer without creating another registry. */
+  applyRuntimeSettings(settings = this.getRuntimeSettings()) {
+    this.settings = normalizeAlphaSettings(settings || {});
+    this.coordinator.setSettings?.(this.settings);
+    this.developmentReview?.setSettingsSource?.(() => this.getRuntimeSettings());
+    this.developmentReview?.onSettingsChanged?.(this.settings);
+    return this.settings;
+  }
+
   /** Attach the S4 Development scheduler without creating another state path. */
   setDevelopmentReview(review) {
     this.developmentReview = review || null;
+    if (this.developmentReview) this.developmentReview.setSettingsSource?.(() => this.getRuntimeSettings());
     return this.developmentReview;
   }
 
@@ -365,6 +426,23 @@ export class SillyTavernAdapter {
           type: DIAGNOSTIC_EVENT_TYPES.HOST_EVENT_REJECTED,
           reason: 'No valid chat ID available during generation interceptor.',
         });
+        return;
+      }
+
+      const ownershipConflict = await this.refreshOwnershipConflict();
+      const runtimeSettings = this.applyRuntimeSettings();
+      if (ownershipConflict || !runtimeSettings.enabled) {
+        this.inFlightRequest = null;
+        const disabledCtx = this.getContext();
+        try {
+          disabledCtx?.setExtensionPrompt?.('npc_state_alpha', '', 1, 0, false);
+        } catch {}
+        if (ownershipConflict) {
+          this.diagnostics.record({
+            type: DIAGNOSTIC_EVENT_TYPES.HOST_EVENT_REJECTED,
+            reason: `Automatic Alpha capture paused because competing continuity owner '${ownershipConflict.name || ownershipConflict.extension || 'unknown'}' is enabled.`,
+          });
+        }
         return;
       }
 
@@ -677,6 +755,11 @@ export class SillyTavernAdapter {
   async _processMessageReceived(messageId, eventType) {
     try {
       const chatId = this.storage.getChatId();
+      const ownershipConflict = await this.refreshOwnershipConflict();
+      if (ownershipConflict || !this.applyRuntimeSettings().enabled) {
+        this.inFlightRequest = null;
+        return;
+      }
 
       this.diagnostics.record({
         type: DIAGNOSTIC_EVENT_TYPES.HOST_EVENT_CANDIDATE,
@@ -876,6 +959,16 @@ export class SillyTavernAdapter {
 
       if (!parseResult.success) {
         // Extraction failure: narrative remains narrative, zero extra provider calls
+        this.lastImmediateFailureByChat.set(chatId, {
+          chatId,
+          messageId: numericPosition,
+          rawText,
+          capturedRequest,
+          failedSwipe: getMessageSwipeId(candidateMsg),
+          errorCode: parseResult.errorCode,
+          errorMessage: parseResult.errorMessage,
+          failedAt: new Date().toISOString(),
+        });
         this.diagnostics.record({
           type: DIAGNOSTIC_EVENT_TYPES.TRAILER_PARSE_FAILURE,
           errorCode: parseResult.errorCode,
@@ -889,6 +982,16 @@ export class SillyTavernAdapter {
       // Schema Validation (S1 Validator)
       const valResult = validateOnePassEnvelope(parseResult.payload);
       if (!valResult.valid) {
+        this.lastImmediateFailureByChat.set(chatId, {
+          chatId,
+          messageId: numericPosition,
+          rawText,
+          capturedRequest,
+          failedSwipe: getMessageSwipeId(candidateMsg),
+          errorCode: 'schema_validation_failed',
+          errorMessage: (valResult.errors || []).join('; '),
+          failedAt: new Date().toISOString(),
+        });
         this.diagnostics.record({
           type: DIAGNOSTIC_EVENT_TYPES.TRAILER_PARSE_FAILURE,
           errorCode: 'schema_validation_failed',
@@ -1083,6 +1186,7 @@ export class SillyTavernAdapter {
 
       if (commitResult.success) {
         this.processedDedupKeys.add(dedupKey);
+        this.lastImmediateFailureByChat.delete(chatId);
 
         // MESSAGE_RECEIVED is awaited by ST before addOneMessage(). After durable
         // commit, arm a temporary display override so the first browser render never
@@ -1375,6 +1479,210 @@ export class SillyTavernAdapter {
     } catch {
       // Best-effort invocation: do not throw into host lifecycle
     }
+  }
+
+  /**
+   * Returns the last immediate extraction failure descriptor for a chat.
+   * @param {string} [chatId]
+   * @returns {object|null}
+   */
+  getImmediateFailure(chatId = this.storage.getChatId()) {
+    if (!chatId) return null;
+    return this.lastImmediateFailureByChat.get(chatId) || null;
+  }
+
+  /**
+   * Retries immediate extraction for the exact failed exchange in the active chat.
+   * The caller cannot supply replacement model text. A user may repair the live
+   * failed assistant message in place, but chat/source position, prior lineage and
+   * swipe ownership must still match the recorded failed exchange.
+   */
+  async retryImmediate(options = {}) {
+    if (Object.prototype.hasOwnProperty.call(options, 'rawText')) {
+      return { success: false, status: 'raw_override_forbidden', error: 'Retry immediate reads only the live failed message; caller-supplied text is forbidden.' };
+    }
+
+    const ctx = this.getContext();
+    const activeChatId = this.storage.getChatId(ctx);
+    if (!activeChatId) return { success: false, status: 'no_chat', error: 'No active chat.' };
+    if (options.chatId && options.chatId !== activeChatId) {
+      return { success: false, status: 'chat_mismatch', error: 'Retry immediate is limited to the active chat.' };
+    }
+    if (!this.applyRuntimeSettings().enabled) {
+      return { success: false, status: 'alpha_disabled', error: 'NPC State Alpha is disabled.' };
+    }
+
+    const chatId = activeChatId;
+    const failure = this.lastImmediateFailureByChat.get(chatId);
+    if (!failure) return { success: false, status: 'no_failed_exchange', error: 'No failed immediate extraction for this chat.' };
+    const capturedRequest = failure.capturedRequest;
+    const userSource = capturedRequest?.userSource;
+    if (!capturedRequest || !userSource) {
+      return { success: false, status: 'ownership_unavailable', error: 'The failed exchange no longer has complete owned source metadata.' };
+    }
+
+    const chat = ctx?.chat;
+    if (!Array.isArray(chat)) return { success: false, status: 'host_chat_unavailable', error: 'Chat unavailable.' };
+    const messageIndex = failure.messageId;
+    const candidateMsg = chat[messageIndex];
+    if (!candidateMsg || candidateMsg.is_user || candidateMsg.is_system || typeof candidateMsg.mes !== 'string') {
+      return { success: false, status: 'message_unavailable', error: 'Failed assistant message is not available at its recorded position.' };
+    }
+
+    const currentSwipe = getMessageSwipeId(candidateMsg);
+    if (failure.failedSwipe !== undefined && currentSwipe !== failure.failedSwipe) {
+      return { success: false, status: 'branch_changed', error: 'Failed message swipe identity changed; Retry immediate cannot cross branches.' };
+    }
+    const expectedLineage = Array.isArray(capturedRequest.precedingLineage) ? capturedRequest.precedingLineage : [];
+    const actualLineage = buildPrecedingLineage(chat, messageIndex);
+    if (actualLineage.length !== expectedLineage.length || !expectedLineage.every((fp, i) => fp === actualLineage[i])) {
+      return { success: false, status: 'lineage_changed', error: 'The exchange lineage changed; Retry immediate cannot reuse stale ownership.' };
+    }
+
+    const liveUser = chat[userSource.position];
+    if (!liveUser || !liveUser.is_user || liveUser.is_system || typeof liveUser.mes !== 'string') {
+      return { success: false, status: 'user_source_changed', error: 'The owned user source is no longer available.' };
+    }
+    if (computeContentFingerprint(liveUser.mes) !== userSource.contentFingerprint) {
+      return { success: false, status: 'user_source_changed', error: 'The owned user source text changed.' };
+    }
+    if (userSource.swipe !== undefined && getMessageSwipeId(liveUser) !== userSource.swipe) {
+      return { success: false, status: 'user_source_changed', error: 'The owned user source swipe changed.' };
+    }
+    const liveUserLineage = buildPrecedingLineage(chat, userSource.position);
+    const expectedUserLineage = Array.isArray(userSource.precedingLineage) ? userSource.precedingLineage : [];
+    if (liveUserLineage.length !== expectedUserLineage.length || !expectedUserLineage.every((fp, i) => fp === liveUserLineage[i])) {
+      return { success: false, status: 'user_source_changed', error: 'The owned user source lineage changed.' };
+    }
+
+    const rawText = candidateMsg.mes;
+    const parseResult = extractAndParseOnePassTrailer(rawText);
+    if (!parseResult.success) {
+      failure.rawText = rawText;
+      failure.errorCode = parseResult.errorCode;
+      failure.errorMessage = parseResult.errorMessage;
+      failure.lastRetryAt = new Date().toISOString();
+      return { success: false, status: 'parse_failed', errorCode: parseResult.errorCode, errorMessage: parseResult.errorMessage };
+    }
+    const valResult = validateOnePassEnvelope(parseResult.payload);
+    if (!valResult.valid) {
+      failure.rawText = rawText;
+      failure.errorCode = 'schema_validation_failed';
+      failure.errorMessage = (valResult.errors || []).map((e) => e.errorMessage || e).join('; ');
+      failure.lastRetryAt = new Date().toISOString();
+      return { success: false, status: 'validation_failed', errors: valResult.errors };
+    }
+
+    const cleanNarrative = parseResult.narrative;
+    const assistantFingerprint = computeContentFingerprint(cleanNarrative);
+    const dedupKey = `${chatId}:${messageIndex}:${currentSwipe}:${assistantFingerprint}`;
+    if (this.processedDedupKeys.has(dedupKey)) {
+      this.lastImmediateFailureByChat.delete(chatId);
+      return { success: false, status: 'replay_suppressed', reason: 'memory_set_replay' };
+    }
+
+    const exchangeContext = {
+      chatId,
+      currentUserMessage: {
+        position: userSource.position,
+        role: 'user',
+        contentFingerprint: userSource.contentFingerprint,
+        chatId,
+        text: liveUser.mes,
+        precedingLineage: expectedUserLineage,
+        swipe: userSource.swipe,
+      },
+      currentAssistantMessage: {
+        position: messageIndex,
+        role: 'assistant',
+        contentFingerprint: assistantFingerprint,
+        chatId,
+        text: rawText,
+        precedingLineage: expectedLineage,
+        swipe: currentSwipe,
+      },
+      requestLineage: expectedLineage,
+    };
+
+    let storedState;
+    try {
+      storedState = (await this.storage.load()).state;
+    } catch (error) {
+      return { success: false, status: 'storage_unavailable', error: error.message };
+    }
+    const divergence = detectCommittedBranchDivergence(storedState, chat, { ignorePosition: messageIndex });
+    if (divergence) {
+      return { success: false, status: 'history_recovery_required', error: `Committed history diverged at position ${divergence.position ?? 'unknown'}; S6 recovery is required.` };
+    }
+    const isContinuation = capturedRequest.generationType === 'continue';
+    if (isContinuation && capturedRequest.continuationPosition !== messageIndex) {
+      return { success: false, status: 'continuation_mismatch', error: 'Continuation no longer targets its captured message position.' };
+    }
+    const priorAtPosition = getLatestCommittedAssistantSources(storedState).get(messageIndex);
+    if (priorAtPosition && !isContinuation && !storedState.dedup?.processedSourceKeys?.includes(dedupKey)) {
+      return { success: false, status: 'history_recovery_required', error: 'This message position already has a different committed Alpha source; S6 recovery is required.' };
+    }
+
+    const capturedDependencies = [];
+    for (const sourceRef of ['current:user', 'current:assistant']) {
+      const captured = captureScopeDependency(sourceRef, exchangeContext, { writer: WRITERS.ONE_PASS });
+      if (!captured.valid) {
+        return { success: false, status: 'source_ownership_failed', error: captured.error, errorCode: captured.errorCode };
+      }
+      capturedDependencies.push(captured.capturedDependency);
+    }
+
+    const pendingReviewEntries = [];
+    const seenPendingTargets = new Set();
+    for (const proposal of parseResult.payload.proposals || []) {
+      const targetKey = proposal.localRef || proposal.id || proposal.targetId;
+      if (!targetKey || seenPendingTargets.has(targetKey)) continue;
+      seenPendingTargets.add(targetKey);
+      const continuationSuffix = isContinuation ? `:cont:${assistantFingerprint}` : '';
+      pendingReviewEntries.push({
+        id: `pending_${chatId}_${messageIndex}_${targetKey}${continuationSuffix}`,
+        targetId: targetKey,
+        sourceScope: [`chat:${chatId}:${userSource.position}`, `chat:${chatId}:${messageIndex}`],
+        exchangeId: `${chatId}:${messageIndex}${continuationSuffix}`,
+        reason: proposal.localRef ? 'new_admission' : 'fast_proposal',
+        createdAt: new Date().toISOString(),
+        metadata: {
+          userPosition: userSource.position,
+          userSwipe: userSource.swipe,
+          assistantPosition: messageIndex,
+          assistantSwipe: currentSwipe,
+          userFingerprint: userSource.contentFingerprint,
+          assistantFingerprint,
+        },
+      });
+    }
+
+    const commitResult = await this.coordinator.commitValidatedEnvelope({
+      writer: WRITERS.ONE_PASS,
+      envelope: parseResult.payload,
+      exchangeContext,
+      capturedDependencies,
+      dedupKeys: [dedupKey],
+      pendingReviewEntries,
+    });
+
+    if (!commitResult.success) {
+      failure.rawText = rawText;
+      failure.errorCode = commitResult.errorCode || 'commit_failed';
+      failure.errorMessage = commitResult.error;
+      failure.lastRetryAt = new Date().toISOString();
+      return { success: false, status: 'commit_failed', commitResult };
+    }
+
+    this.processedDedupKeys.add(dedupKey);
+    this.lastImmediateFailureByChat.delete(chatId);
+    this.hideCommittedTransport(messageIndex, candidateMsg, cleanNarrative, chatId);
+    this.developmentReview?.onImmediateCommit?.({ chatId, commitResult });
+    return {
+      success: true,
+      status: commitResult.replay || commitResult.noop ? 'replay_suppressed' : 'committed',
+      commitResult,
+    };
   }
 
   /**

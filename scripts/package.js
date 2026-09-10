@@ -68,8 +68,8 @@ export function buildPackage() {
     copiedFiles.push('LICENSE');
   }
 
-  // 4. Copy runtime source directories only (src/contract, src/runtime, src/state, src/host)
-  const runtimeDirs = ['contract', 'runtime', 'state', 'host'];
+  // 4. Copy runtime source directories only (src/contract, src/runtime, src/state, src/host, src/ui)
+  const runtimeDirs = ['contract', 'runtime', 'state', 'host', 'ui'];
   for (const dir of runtimeDirs) {
     const srcDir = path.join(REPO_ROOT, 'src', dir);
     const destDir = path.join(DIST_DIR, 'src', dir);

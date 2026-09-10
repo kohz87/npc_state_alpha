@@ -1,13 +1,14 @@
 /**
- * NPC State Alpha — S4 Repository Validation Script
+ * NPC State Alpha — S5 Repository Validation Script
  *
  * Verifies:
  * - Module imports and dependency reachability
  * - Version consistency between package.json, wire contracts, and documentation
  * - Canonical C02 ownership coverage
  * - Production wire examples validity
- * - S4 Development settings/queue/provider/context integration
- * - Absence of accidental S5+ runtime scaffolding or external runtime dependencies
+ * - Accepted S4 Development settings/queue/provider/context integration
+ * - S5 practical UI, user commands, relationship mechanics, and C14 ownership gate
+ * - Absence of accidental S6+ runtime scaffolding or external runtime dependencies
  */
 
 import fs from 'node:fs';
@@ -19,7 +20,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 async function runValidation() {
-  console.log('--- NPC State Alpha: S4 Repository Validation ---');
+  console.log('--- NPC State Alpha: S5 Repository Validation ---');
   let errors = 0;
 
   function fail(msg) {
@@ -379,22 +380,134 @@ async function runValidation() {
     pass('scripts/package.js exists.');
   }
 
-  // 8. Explicit S5+ absence checks. S4 Development orchestration is now expected.
-  const forbiddenS5Paths = [
-    'src/ui',
+  // 8. S5 Practical UI & Canonical User Commands Validation
+  let ui;
+  try {
+    ui = await import('../src/ui/index.js');
+    pass('src/ui/index.js imported successfully.');
+  } catch (err) {
+    fail(`Failed to import src/ui/index.js: ${err.message}`);
+    return 1;
+  }
+
+  const requiredS5UIClasses = [
+    'UIController',
+    'DossierView',
+    'NpcEditor',
+    'SettingsView',
+    'DiagnosticsView',
+  ];
+  for (const name of requiredS5UIClasses) {
+    if (typeof ui[name] !== 'function') {
+      fail(`Expected S5 UI export '${name}' to be a class/function, found ${typeof ui[name]}`);
+    }
+  }
+  pass(`All ${requiredS5UIClasses.length} S5 UI primitives verified.`);
+
+  // Canonical S5 user commands
+  const requiredS5UserCommands = [
+    'applyNpcEdit',
+    'updateNpcField',
+    'setFieldLock',
+    'setImportance',
+    'setPortrait',
+    'deleteNpc',
+    'correctLifecycle',
+  ];
+  for (const cmd of requiredS5UserCommands) {
+    if (typeof runtime[cmd] !== 'function') {
+      fail(`Expected S5 canonical user command '${cmd}' in runtime exports.`);
+    }
+  }
+  pass(`All ${requiredS5UserCommands.length} canonical S5 user commands verified.`);
+  if (typeof runtime.restoreNpc === 'function') {
+    fail('S5 must not export restoreNpc; full tombstone restoration belongs to S6 history/recovery.');
+  } else {
+    pass('S5 tombstone restoration remains deferred to S6 history/recovery.');
+  }
+
+  // Relationship mechanics
+  const requiredS5RelFunctions = [
+    'calculateAxisMilestone',
+    'calculateRelationshipMilestones',
+    'calculateAxisDelta',
+    'applyRelationshipMechanics',
+  ];
+  for (const fn of requiredS5RelFunctions) {
+    if (typeof runtime[fn] !== 'function') {
+      fail(`Expected S5 relationship mechanic '${fn}' in runtime exports.`);
+    }
+  }
+  pass(`All ${requiredS5RelFunctions.length} S5 relationship mechanics verified.`);
+
+  // Development review queue S5 operations
+  const devQueueProto = host.DevelopmentReviewQueue?.prototype;
+  const requiredS5QueueMethods = ['reviewPending', 'retryFailed', 'recheckMissingDetails', 'refreshDossier'];
+  for (const method of requiredS5QueueMethods) {
+    if (typeof devQueueProto?.[method] !== 'function') {
+      fail(`Expected DevelopmentReviewQueue prototype to have method '${method}'`);
+    }
+  }
+  pass(`All ${requiredS5QueueMethods.length} S5 Development queue control methods verified.`);
+
+  // SillyTavern adapter retry immediate
+  const adapterProto = host.SillyTavernAdapter?.prototype;
+  if (typeof adapterProto?.retryImmediate !== 'function' || typeof adapterProto?.getImmediateFailure !== 'function') {
+    fail('Expected SillyTavernAdapter to provide retryImmediate and getImmediateFailure methods.');
+  } else {
+    pass('SillyTavernAdapter retryImmediate and getImmediateFailure verified.');
+  }
+
+  // Root index.js getActiveUIController
+  if (typeof rootIndex?.getActiveUIController !== 'function') {
+    fail('Root index.js missing getActiveUIController export.');
+  } else {
+    pass('Root index.js exports getActiveUIController.');
+  }
+
+  // S5/C14 practical settings and competing-owner gate.
+  if (
+    contract.ALPHA_SETTINGS_DEFAULTS?.enabled !== true ||
+    contract.ALPHA_SETTINGS_DEFAULTS?.admissionPolicy !== 'named_preferred' ||
+    contract.ALPHA_SETTINGS_DEFAULTS?.routineDossierDetailBudget !== 'auto' ||
+    contract.ALPHA_SETTINGS_DEFAULTS?.developmentEnabled !== true ||
+    contract.ALPHA_SETTINGS_DEFAULTS?.developmentCadence !== 3
+  ) {
+    fail('S5 canonical settings defaults do not match C14 practical-use requirements.');
+  } else {
+    const invalidExplicit = contract.validateAlphaSettings?.({ developmentCadence: 99, routineDossierDetailBudget: 21 });
+    if (!invalidExplicit || invalidExplicit.valid !== false) {
+      fail('S5 explicit settings validation must reject out-of-range cadence/detail budget values.');
+    } else {
+      pass('S5 canonical settings defaults and strict explicit validation verified.');
+    }
+  }
+
+  if (
+    typeof rootIndex?.detectKnownCompetingAutomaticOwner !== 'function' ||
+    typeof adapterProto?.getOwnershipConflict !== 'function' ||
+    typeof adapterProto?.refreshOwnershipConflict !== 'function'
+  ) {
+    fail('S5 C14 competing automatic-owner detection/reporting hooks are missing.');
+  } else {
+    pass('S5 C14 competing-owner detection/reporting hooks verified.');
+  }
+
+  // 9. Explicit S6+ absence checks
+  const forbiddenS6Paths = [
     'src/importer',
     'src/history-rebuild',
     'src/packaging',
   ];
 
-  for (const p of forbiddenS5Paths) {
+  for (const p of forbiddenS6Paths) {
     if (fs.existsSync(path.join(rootDir, p))) {
-      fail(`Accidental S5+ path created prematurely: ${p}`);
+      fail(`Accidental S6+ path created prematurely: ${p}`);
     }
   }
-  pass('Confirmed no accidental S5+ UI/history/import runtime modules exist.');
+  pass('Confirmed no accidental S6+ history/import runtime modules exist.');
 
-  console.log(`--- S4 Validation finished with ${errors} error(s) ---`);
+  console.log(`--- S5 Validation finished with ${errors} error(s) ---`);
   return errors === 0 ? 0 : 1;
 }
 

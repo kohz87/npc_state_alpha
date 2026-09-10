@@ -534,7 +534,7 @@ export function validateState(state) {
         if (!npc.relationship || typeof npc.relationship !== 'object' || Array.isArray(npc.relationship)) {
           errors.push(`NPC '${npcId}' relationship must be an object.`);
         } else {
-          const allowedAxes = ['trust', 'affection', 'desire', 'tension', 'lastEvaluationExchange'];
+          const allowedAxes = ['trust', 'affection', 'desire', 'tension', 'lastEvaluationExchange', 'progress', 'milestones', 'scoringHistory'];
           for (const key of Object.keys(npc.relationship)) {
             if (!allowedAxes.includes(key)) {
               errors.push(`NPC '${npcId}' relationship contains unknown axis or key '${key}'.`);
@@ -550,6 +550,83 @@ export function validateState(state) {
             const lex = npc.relationship.lastEvaluationExchange;
             if (typeof lex !== 'string' && (typeof lex !== 'number' || !Number.isInteger(lex) || lex < 0)) {
               errors.push(`NPC '${npcId}' relationship.lastEvaluationExchange must be null, a string, or a non-negative integer.`);
+            }
+          }
+          if (npc.relationship.progress !== undefined) {
+            if (!npc.relationship.progress || typeof npc.relationship.progress !== 'object' || Array.isArray(npc.relationship.progress)) {
+              errors.push(`NPC '${npcId}' relationship.progress must be an object.`);
+            } else {
+              for (const axis of ['trust', 'affection', 'desire', 'tension']) {
+                if (npc.relationship.progress[axis] !== undefined && (
+                  typeof npc.relationship.progress[axis] !== 'number' ||
+                  !Number.isFinite(npc.relationship.progress[axis]) ||
+                  npc.relationship.progress[axis] < 0 ||
+                  npc.relationship.progress[axis] >= 1
+                )) {
+                  errors.push(`NPC '${npcId}' relationship.progress['${axis}'] must be a finite fraction from 0 (inclusive) to 1 (exclusive).`);
+                }
+              }
+            }
+          }
+          if (npc.relationship.milestones !== undefined) {
+            if (!Array.isArray(npc.relationship.milestones) || !npc.relationship.milestones.every((m) => typeof m === 'string' && m.trim() !== '')) {
+              errors.push(`NPC '${npcId}' relationship.milestones must be an array of non-empty strings.`);
+            }
+          }
+          if (npc.relationship.scoringHistory !== undefined) {
+            if (!Array.isArray(npc.relationship.scoringHistory)) {
+              errors.push(`NPC '${npcId}' relationship.scoringHistory must be an array.`);
+            } else {
+              const HISTORY_KEYS = ['exchangeId', 'timestamp', 'shifted', 'reason', 'impact', 'source', 'rawDeltas', 'appliedDeltas', 'resultingScores', 'milestones', 'axisSupport'];
+              const REL_AXES = ['trust', 'affection', 'desire', 'tension'];
+              for (let i = 0; i < npc.relationship.scoringHistory.length; i++) {
+                const h = npc.relationship.scoringHistory[i];
+                if (!h || typeof h !== 'object' || Array.isArray(h)) {
+                  errors.push(`NPC '${npcId}' relationship.scoringHistory[${i}] must be an object.`);
+                  continue;
+                }
+                for (const key of Object.keys(h)) {
+                  if (!HISTORY_KEYS.includes(key)) errors.push(`NPC '${npcId}' relationship.scoringHistory[${i}] contains unknown key '${key}'.`);
+                }
+                if (h.exchangeId !== null && (typeof h.exchangeId !== 'string' || h.exchangeId.trim() === '')) {
+                  errors.push(`NPC '${npcId}' relationship.scoringHistory[${i}].exchangeId must be null or a non-empty string.`);
+                }
+                if (typeof h.timestamp !== 'string' || h.timestamp.trim() === '') {
+                  errors.push(`NPC '${npcId}' relationship.scoringHistory[${i}].timestamp must be a non-empty string.`);
+                }
+                if (typeof h.shifted !== 'boolean') errors.push(`NPC '${npcId}' relationship.scoringHistory[${i}].shifted must be boolean.`);
+                for (const textKey of ['reason', 'impact']) {
+                  if (h[textKey] !== null && h[textKey] !== undefined && (typeof h[textKey] !== 'string' || h[textKey].trim() === '')) {
+                    errors.push(`NPC '${npcId}' relationship.scoringHistory[${i}].${textKey} must be null or a non-empty string.`);
+                  }
+                }
+                if (h.source !== null && h.source !== undefined) {
+                  if (!h.source || typeof h.source !== 'object' || Array.isArray(h.source) || typeof h.source.sourceRef !== 'string' || typeof h.source.excerpt !== 'string' || h.source.sourceRef.trim() === '' || h.source.excerpt.trim() === '') {
+                    errors.push(`NPC '${npcId}' relationship.scoringHistory[${i}].source must be null or a concrete SourceReference.`);
+                  }
+                }
+                for (const mapKey of ['rawDeltas', 'appliedDeltas', 'resultingScores']) {
+                  const map = h[mapKey];
+                  if (!map || typeof map !== 'object' || Array.isArray(map)) {
+                    errors.push(`NPC '${npcId}' relationship.scoringHistory[${i}].${mapKey} must be an axis map.`);
+                    continue;
+                  }
+                  for (const key of Object.keys(map)) {
+                    if (!REL_AXES.includes(key)) errors.push(`NPC '${npcId}' relationship.scoringHistory[${i}].${mapKey} contains unknown axis '${key}'.`);
+                  }
+                  for (const axis of REL_AXES) {
+                    if (typeof map[axis] !== 'number' || !Number.isFinite(map[axis])) {
+                      errors.push(`NPC '${npcId}' relationship.scoringHistory[${i}].${mapKey}.${axis} must be a finite number.`);
+                    }
+                  }
+                }
+                if (!Array.isArray(h.milestones) || !h.milestones.every((m) => typeof m === 'string' && m.trim() !== '')) {
+                  errors.push(`NPC '${npcId}' relationship.scoringHistory[${i}].milestones must be an array of non-empty strings.`);
+                }
+                if (h.axisSupport !== null && h.axisSupport !== undefined && (!h.axisSupport || typeof h.axisSupport !== 'object' || Array.isArray(h.axisSupport))) {
+                  errors.push(`NPC '${npcId}' relationship.scoringHistory[${i}].axisSupport must be null or an object.`);
+                }
+              }
             }
           }
         }

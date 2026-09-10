@@ -22,6 +22,7 @@ import {
 } from '../contract/registry.js';
 import {
   normalizeRelationshipScore,
+  applyRelationshipMechanics,
 } from './relationship-mechanics.js';
 
 let collectionIdCounter = 0;
@@ -99,9 +100,12 @@ export function applyFieldProposal(npc, fieldName, proposalValue, writer, option
     return { applied: false, error: authVal.error };
   }
 
-  // 2. Lock check: field-level manual lock blocks automatic writers (C02, C05)
-  if ((writer === WRITERS.ONE_PASS || writer === WRITERS.DEVELOPMENT) && npc.locks && npc.locks[fieldName] === true) {
-    return { applied: false, reason: 'locked' };
+  // 2. Only the explicit automatic-update lock blocks automatic writers (C05).
+  // Manual correction provenance does not implicitly freeze future evolution.
+  if (writer === WRITERS.ONE_PASS || writer === WRITERS.DEVELOPMENT) {
+    if (npc.locks && npc.locks[fieldName] === true) {
+      return { applied: false, reason: 'locked' };
+    }
   }
 
   // 3. Omission preserves: undefined means omitted, untouched no-op (C05)
@@ -109,7 +113,7 @@ export function applyFieldProposal(npc, fieldName, proposalValue, writer, option
     return { applied: false, reason: 'omitted' };
   }
 
-  const oldValue = npc[fieldName];
+  const oldValue = npc[fieldName] !== undefined ? structuredClone(npc[fieldName]) : undefined;
   let newValue;
 
   // 4. Domain-specific application logic
@@ -170,7 +174,7 @@ export function applyFieldProposal(npc, fieldName, proposalValue, writer, option
       : proposalValue;
   } else if (fieldName === 'relationshipEvaluation') {
     // Numeric relationship evaluation
-    const relResult = applyRelationshipEvaluation(npc, proposalValue);
+    const relResult = applyRelationshipEvaluation(npc, proposalValue, options);
     if (!relResult.applied) {
       return relResult;
     }
@@ -203,6 +207,32 @@ export function applyFieldProposal(npc, fieldName, proposalValue, writer, option
     } else {
       newValue = proposalValue;
     }
+  } else if (fieldName === 'locks') {
+    const currentLocks = { ...(npc.locks || {}) };
+    if (typeof proposalValue === 'object' && proposalValue !== null) {
+      for (const [lockField, isLocked] of Object.entries(proposalValue)) {
+        if (CANONICAL_FIELDS[lockField]) {
+          currentLocks[lockField] = Boolean(isLocked);
+        }
+      }
+    }
+    newValue = currentLocks;
+  } else if (fieldName === 'manualCorrections') {
+    const currentCorrections = { ...(npc.manualCorrections || {}) };
+    if (typeof proposalValue === 'object' && proposalValue !== null) {
+      Object.assign(currentCorrections, proposalValue);
+    }
+    newValue = currentCorrections;
+  } else if (fieldName === 'portrait') {
+    if (proposalValue !== null && typeof proposalValue !== 'string') {
+      return { applied: false, error: 'portrait must be a string URL/path or null.' };
+    }
+    newValue = proposalValue;
+  } else if (fieldName === 'importance') {
+    if (proposalValue !== null && (typeof proposalValue !== 'number' || !Number.isFinite(proposalValue))) {
+      return { applied: false, error: 'importance must be a finite number or null.' };
+    }
+    newValue = proposalValue;
   } else if (CANONICAL_FIELDS[fieldName]?.isCollection) {
     // Collection application (aliases, mannerisms, appearanceForms, importantMemories, nonPlayerRelationships)
     const collResult = applyCollectionOperation(npc, fieldName, proposalValue, options);
@@ -240,6 +270,27 @@ export function applyFieldProposal(npc, fieldName, proposalValue, writer, option
   const currentRev = npc.fieldRevisions[fieldName] || 0;
   const nextRev = currentRev + 1;
   npc.fieldRevisions[fieldName] = nextRev;
+
+  // Record user manual correction (C02, C05, S5)
+  if (writer === WRITERS.USER && fieldName !== 'locks' && fieldName !== 'manualCorrections') {
+    if (!npc.manualCorrections) npc.manualCorrections = {};
+    npc.manualCorrections[fieldName] = {
+      correctedAt: options.timestamp || new Date().toISOString(),
+      writer: WRITERS.USER,
+      value: newValue,
+      previousValue: oldValue !== undefined ? oldValue : null,
+      reason: options.reason || 'User manual correction',
+      notes: options.notes,
+    };
+    npc.fieldRevisions.manualCorrections = (npc.fieldRevisions.manualCorrections || 0) + 1;
+
+    // Explicit lock requested alongside correction (correction does not imply lock by default)
+    if (options.lock !== undefined) {
+      if (!npc.locks) npc.locks = {};
+      npc.locks[fieldName] = Boolean(options.lock);
+      npc.fieldRevisions.locks = (npc.fieldRevisions.locks || 0) + 1;
+    }
+  }
 
   return {
     applied: true,
@@ -546,53 +597,10 @@ function applyCollectionOperation(npc, fieldName, proposalValue, options = {}) {
  * @param {object} evalProposal
  * @returns {FieldApplyResult}
  */
-function applyRelationshipEvaluation(npc, evalProposal) {
-  if (!evalProposal || typeof evalProposal !== 'object') {
-    return { applied: false, error: 'relationshipEvaluation must be an object.' };
-  }
-
-  if (!npc.relationship) {
-    npc.relationship = {
-      trust: 0,
-      affection: 0,
-      desire: 0,
-      tension: 0,
-      lastEvaluationExchange: null,
-    };
-  }
-
-  const { shifted, axes } = evalProposal;
-  if (shifted === false) {
-    // Explicit no-shift: records evaluation without numeric change (Task 14, C04, C05, C07)
-    return {
-      applied: false,
-      reason: 'explicit_zero_shift',
-      oldValue: { ...npc.relationship },
-      newValue: { ...npc.relationship },
-    };
-  }
-
-  const deltaAxes = axes;
-  let anyDelta = false;
-  if (deltaAxes && typeof deltaAxes === 'object') {
-    for (const axis of ['trust', 'affection', 'desire', 'tension']) {
-      if (typeof deltaAxes[axis] === 'number' && Number.isFinite(deltaAxes[axis])) {
-        if (deltaAxes[axis] !== 0) {
-          anyDelta = true;
-        }
-        const currentVal = npc.relationship[axis] || 0;
-        npc.relationship[axis] = normalizeRelationshipScore(currentVal + deltaAxes[axis]);
-      }
-    }
-  }
-
-  if (!anyDelta) {
-    return {
-      applied: false,
-      reason: 'unchanged',
-      oldValue: { ...npc.relationship },
-      newValue: { ...npc.relationship },
-    };
+function applyRelationshipEvaluation(npc, evalProposal, options = {}) {
+  const result = applyRelationshipMechanics(npc, evalProposal, options);
+  if (!result.applied) {
+    return result;
   }
 
   const currentRev = npc.fieldRevisions.relationshipEvaluation || 0;
@@ -601,8 +609,11 @@ function applyRelationshipEvaluation(npc, evalProposal) {
 
   return {
     applied: true,
-    newValue: { ...npc.relationship },
+    oldValue: result.oldValue,
+    newValue: result.newValue,
     newRevision: nextRev,
+    appliedDeltas: result.appliedDeltas,
+    milestones: result.milestones,
   };
 }
 

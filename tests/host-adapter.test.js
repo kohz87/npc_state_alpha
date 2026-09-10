@@ -115,6 +115,40 @@ test('S3 Host: Adapter initializes listeners and global generate_interceptor, an
   assert.equal(globalThis[interceptorKey], undefined);
 });
 
+test('S5 C14: detected competing Beta owner pauses Alpha automatic capture and Development without mutating state', async () => {
+  const host = new MockSillyTavernHost({ chatId: 'chat_competing_owner' });
+  const interceptorKey = 'test_competing_owner';
+  host.interceptorKey = interceptorKey;
+  let detectorCalls = 0;
+  const adapter = new SillyTavernAdapter({
+    getContext: () => host.getContext(),
+    interceptorKey,
+    ownershipConflictDetector: async () => {
+      detectorCalls += 1;
+      return { name: 'third-party/npc_state_beta', reason: 'known_competing_automatic_owner' };
+    },
+  });
+  adapter.initialize();
+
+  host.sendUserMessage('Alice waits by the gate.');
+  await host.triggerGenerateInterceptor('normal');
+
+  assert.ok(detectorCalls >= 1);
+  assert.equal(adapter.inFlightRequest, null, 'Competing automatic owner must prevent Alpha request capture.');
+  assert.equal(adapter.getOwnershipConflict()?.name, 'third-party/npc_state_beta');
+  assert.equal(adapter.getRuntimeSettings().developmentEnabled, false, 'The same runtime settings path must pause Development.');
+  assert.equal(host.extensionPrompts.get('npc_state_alpha')?.prompt ?? '', '');
+
+  const raw = `Alice nods.\n\n${TRAILER_TAG_OPEN}\n{"version":"1","proposals":[]}\n${TRAILER_TAG_CLOSE}`;
+  host.chat.push({ is_user: false, is_system: false, name: 'Assistant', mes: raw, send_date: Date.now(), swipe_id: 0 });
+  await host.eventSource.emit(host.eventTypes.MESSAGE_RECEIVED, host.chat.length - 1, 'normal');
+  const stored = await adapter.storage.load();
+  assert.equal(stored.revision, 0);
+  assert.equal(Object.keys(stored.state.npcs).length, 0);
+
+  adapter.destroy();
+});
+
 test('S3 Host: Generation interceptor captures user request, lineage, and injects continuity prompt', async () => {
   const host = new MockSillyTavernHost({ chatId: 'chat_tavern_01' });
   const interceptorKey = 'test_npc_state_alpha_interceptor_gen';

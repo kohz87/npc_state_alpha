@@ -6,10 +6,16 @@
  */
 
 import { WRITERS } from '../contract/registry.js';
-import { revalidateSourceDependency } from '../runtime/source-resolver.js';
+import { revalidateSourceDependency, stripMachineTrailer } from '../runtime/source-resolver.js';
 import { normalizeAlphaSettings } from '../contract/settings.js';
 import { parseDevelopmentResponse } from '../contract/parser.js';
 import { validateDevelopmentEnvelope } from '../contract/validator.js';
+import {
+  AUDIT_OPERATIONS,
+  AUDIT_OUTCOMES,
+  OPERATION_MASKS,
+  validateFieldOutcome,
+} from '../contract/audit-modes.js';
 import {
   buildDevelopmentDispatch,
   buildDevelopmentExchangeContext,
@@ -19,6 +25,14 @@ import {
 } from './development-context.js';
 import { SillyTavernDevelopmentProvider } from './development-provider.js';
 import { DIAGNOSTIC_EVENT_TYPES } from './diagnostics.js';
+import { computeContentFingerprint } from './fingerprint.js';
+import { buildPrecedingLineage, getMessageSwipeId } from './sillytavern-adapter.js';
+
+const BLOCKING_REVIEW_STATUSES = new Set(['failed', 'unavailable', 'deferred']);
+
+function isBlockedEntry(entry) {
+  return BLOCKING_REVIEW_STATUSES.has(entry?.metadata?.lastReviewStatus);
+}
 
 function unique(values) {
   return [...new Set(values)];
@@ -52,6 +66,33 @@ function collectSourceRefs(value, out = new Set()) {
     collectSourceRefs(item, out);
   }
   return out;
+}
+
+function findLatestCapturedDependency(state, sourceRef) {
+  const checkpoints = state?.history?.checkpoints;
+  if (!Array.isArray(checkpoints)) return null;
+  for (let i = checkpoints.length - 1; i >= 0; i--) {
+    const dependencies = checkpoints[i]?.sourceDependencies;
+    if (!Array.isArray(dependencies)) continue;
+    for (let j = dependencies.length - 1; j >= 0; j--) {
+      const dependency = dependencies[j];
+      if (dependency?.sourceRef === sourceRef && dependency.capturedProvenance) return dependency;
+    }
+  }
+  return null;
+}
+
+function provenanceMatchesLiveMessage(provenance, message, chat, expectedChatId, expectedPosition) {
+  if (!provenance || !message || typeof message.mes !== 'string') return false;
+  if (provenance.chatId !== expectedChatId || provenance.position !== expectedPosition) return false;
+  const expectedRole = message.is_user ? 'user' : (!message.is_system ? 'assistant' : 'system');
+  if (provenance.role !== expectedRole) return false;
+  if (provenance.swipe !== undefined && provenance.swipe !== null && getMessageSwipeId(message) !== provenance.swipe) return false;
+  const text = expectedRole === 'assistant' ? stripMachineTrailer(message.mes) : message.mes;
+  if (computeContentFingerprint(text) !== provenance.contentFingerprint) return false;
+  const expectedLineage = Array.isArray(provenance.precedingLineage) ? provenance.precedingLineage : [];
+  const actualLineage = buildPrecedingLineage(chat, expectedPosition);
+  return actualLineage.length === expectedLineage.length && expectedLineage.every((fingerprint, index) => fingerprint === actualLineage[index]);
 }
 
 /**
@@ -198,6 +239,44 @@ export class DevelopmentReviewQueue {
     this.coalescedByChat = new Map();
     this.lastResultByChat = new Map();
     this.lastProviderUsageByChat = new Map();
+    this.statusListeners = new Set();
+  }
+
+  /**
+   * Subscribe to bounded queue-status/state-change notifications for thin UI refresh.
+   * Returns an idempotent unsubscribe function. This is notification only; canonical
+   * state remains in shared storage and all writes still flow through CommitCoordinator.
+   */
+  subscribe(listener) {
+    if (typeof listener !== 'function') return () => {};
+    this.statusListeners.add(listener);
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      this.statusListeners.delete(listener);
+    };
+  }
+
+  _notifyStatus(change = {}) {
+    for (const listener of this.statusListeners) {
+      try { listener(change); } catch {}
+    }
+  }
+
+  setSettingsSource(source) {
+    this.settingsSource = source || null;
+    return this.getSettings();
+  }
+
+  onSettingsChanged(settings = this.getSettings()) {
+    const normalized = normalizeAlphaSettings(settings || {});
+    if (!normalized.enabled || !normalized.developmentEnabled) {
+      for (const job of this.inFlightByChat.values()) {
+        if (!job.controller.signal.aborted) job.controller.abort('settings_disabled');
+      }
+    }
+    return normalized;
   }
 
   getSettings() {
@@ -268,6 +347,366 @@ export class DevelopmentReviewQueue {
     return { status: 'no_chat' };
   }
 
+  _manualBusyResult(reason) {
+    const chatId = this.storage.getChatId();
+    if (!chatId || !this.inFlightByChat.has(chatId)) return null;
+    this._record(DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_COALESCED, { chatId, reason, manual: true, rejected: true });
+    return {
+      success: false,
+      status: 'already_in_flight',
+      chatId,
+      reason: 'development_already_in_flight',
+      error: 'A Development review is already active for this chat. Retry this manual operation after it finishes.',
+    };
+  }
+
+  /**
+   * Triggers manual review of pending entries.
+   * @param {object} [options]
+   * @returns {Promise<object>}
+   */
+  async reviewPending(options = {}) {
+    const busy = this._manualBusyResult('manual_review_pending');
+    if (busy) return busy;
+    return this.trigger('manual_review_pending', { manual: true, ...options });
+  }
+
+  /**
+   * Resets blocked (failed/unavailable/deferred) pending entries and triggers manual review.
+   * @param {object} [options]
+   * @returns {Promise<object>}
+   */
+  async retryFailed(options = {}) {
+    const busy = this._manualBusyResult('manual_retry_failed');
+    if (busy) return busy;
+    const loaded = await this.storage.load();
+    const blockedEntries = (loaded.state?.pendingReview?.entries || []).filter(
+      (entry) => isBlockedEntry(entry)
+    );
+    if (blockedEntries.length > 0) {
+      const pendingReviewUpdates = blockedEntries.map((entry) => ({
+        id: entry.id,
+        metadataPatch: {
+          lastReviewStatus: 'pending',
+          lastFailureCode: null,
+        },
+      }));
+      const prepared = await this.coordinator.commit({
+        writer: WRITERS.RUNTIME,
+        pendingReviewUpdates,
+      });
+      if (!prepared.success) {
+        return { status: 'retry_prepare_failed', error: prepared.error, commitResult: prepared };
+      }
+    }
+    return this.trigger('manual_retry_failed', { manual: true, ...options });
+  }
+
+  /**
+   * Helper to locate or build source scope for audit operations from active chat or existing pending entries.
+   * @private
+   */
+  _resolveAuditSourceScope(chat, chatId, targetId, state) {
+    const candidates = [];
+    for (const entry of state?.pendingReview?.entries || []) {
+      if (entry.targetId === targetId && Array.isArray(entry.sourceScope) && entry.sourceScope.length > 0) {
+        candidates.push({ kind: 'pending', sourceScope: entry.sourceScope, exchangeId: entry.exchangeId || null, metadata: entry.metadata || {} });
+      }
+    }
+    const receipts = state?.npcs?.[targetId]?.development?.reviewReceipts || [];
+    for (let i = receipts.length - 1; i >= 0; i--) {
+      const receipt = receipts[i];
+      if (Array.isArray(receipt.sourceScope) && receipt.sourceScope.length > 0) {
+        candidates.push({ kind: 'receipt', sourceScope: receipt.sourceScope, exchangeId: null, metadata: {} });
+      }
+    }
+
+    const prefix = `chat:${chatId}:`;
+    for (const candidate of candidates) {
+      const positions = [];
+      let invalid = false;
+      for (const sourceRef of candidate.sourceScope) {
+        if (typeof sourceRef !== 'string' || !sourceRef.startsWith(prefix)) { invalid = true; break; }
+        const suffix = sourceRef.slice(prefix.length);
+        if (!/^\d+$/.test(suffix)) { invalid = true; break; }
+        const position = Number(suffix);
+        if (!chat[position] || typeof chat[position].mes !== 'string') { invalid = true; break; }
+        positions.push(position);
+      }
+      if (invalid) continue;
+
+      const userPosition = positions.find((position) => chat[position].is_user && !chat[position].is_system);
+      const assistantPosition = positions.find((position) => !chat[position].is_user && !chat[position].is_system);
+      if (!Number.isInteger(userPosition) || !Number.isInteger(assistantPosition)) continue;
+      const userMsg = chat[userPosition];
+      const assistantMsg = chat[assistantPosition];
+      const userFingerprint = computeContentFingerprint(userMsg.mes);
+      const assistantFingerprint = computeContentFingerprint(stripMachineTrailer(assistantMsg.mes));
+
+      if (candidate.kind === 'pending') {
+        const metadata = candidate.metadata || {};
+        if (Number.isInteger(metadata.userPosition) && metadata.userPosition !== userPosition) continue;
+        if (Number.isInteger(metadata.assistantPosition) && metadata.assistantPosition !== assistantPosition) continue;
+        if (metadata.userFingerprint && metadata.userFingerprint !== userFingerprint) continue;
+        if (metadata.assistantFingerprint && metadata.assistantFingerprint !== assistantFingerprint) continue;
+        if (metadata.userSwipe !== undefined && metadata.userSwipe !== getMessageSwipeId(userMsg)) continue;
+        if (metadata.assistantSwipe !== undefined && metadata.assistantSwipe !== getMessageSwipeId(assistantMsg)) continue;
+      } else {
+        const userDependency = findLatestCapturedDependency(state, candidate.sourceScope.find((ref) => ref === `chat:${chatId}:${userPosition}`));
+        const assistantDependency = findLatestCapturedDependency(state, candidate.sourceScope.find((ref) => ref === `chat:${chatId}:${assistantPosition}`));
+        if (!userDependency || !assistantDependency) continue;
+        if (!provenanceMatchesLiveMessage(userDependency.capturedProvenance, userMsg, chat, chatId, userPosition)) continue;
+        if (!provenanceMatchesLiveMessage(assistantDependency.capturedProvenance, assistantMsg, chat, chatId, assistantPosition)) continue;
+      }
+
+      return {
+        sourceScope: [...candidate.sourceScope],
+        exchangeId: candidate.exchangeId || `${chatId}:${assistantPosition}`,
+        metadata: {
+          ...candidate.metadata,
+          userPosition,
+          userSwipe: getMessageSwipeId(userMsg),
+          userFingerprint,
+          assistantPosition,
+          assistantSwipe: getMessageSwipeId(assistantMsg),
+          assistantFingerprint,
+        },
+      };
+    }
+
+    // Never guess relevance from the latest exchange. Manual audit operations may
+    // reconsider only evidence already owned by this target.
+    return { sourceScope: [], exchangeId: null, metadata: {} };
+  }
+
+  /**
+   * Rechecks missing durable details for an NPC (C12 RECHECK_MISSING operation).
+   * Identifies blank durable fields defined in OPERATION_MASKS[RECHECK_MISSING],
+   * enqueues a restricted review entry, and records field-level audit outcomes.
+   * @param {string} targetId Target NPC ID
+   * @param {object} [options]
+   * @returns {Promise<object>}
+   */
+  async recheckMissingDetails(targetId, options = {}) {
+    if (!targetId || typeof targetId !== 'string') {
+      return { success: false, status: 'invalid_target', error: 'Target ID must be a non-empty string.' };
+    }
+
+    const loaded = await this.storage.load();
+    if (loaded.state?.tombstones?.[targetId]) {
+      return { success: false, status: 'target_tombstoned', targetId, error: `Target NPC '${targetId}' is tombstoned.` };
+    }
+    const npc = loaded.state?.npcs?.[targetId];
+    if (!npc) {
+      return { success: false, status: 'target_not_found', targetId, error: `Target NPC '${targetId}' not found.` };
+    }
+    const busy = this._manualBusyResult('recheck_missing');
+    if (busy) return { ...busy, targetId };
+
+    const recheckMask = OPERATION_MASKS[AUDIT_OPERATIONS.RECHECK_MISSING];
+    const requestedFields = Array.isArray(options.fields) && options.fields.length > 0
+      ? options.fields.filter((f) => recheckMask.includes(String(f).split('.')[0]))
+      : [...recheckMask];
+
+    // Missing/blank criteria: undefined, null, empty string, or empty array.
+    // Locked fields are excluded from automatic recheck because automatic writers cannot modify them.
+    const missingFields = requestedFields.filter((field) => {
+      if (npc.locks?.[field] === true) return false;
+      const val = npc[field];
+      if (val === undefined || val === null || val === '') return true;
+      if (Array.isArray(val) && val.length === 0) return true;
+      return false;
+    });
+
+    if (missingFields.length === 0) {
+      return {
+        success: true,
+        status: 'no_missing_fields',
+        targetId,
+        missingFields: [],
+        fieldOutcomes: requestedFields.map((field) => {
+          const outcome = {
+            field,
+            outcome: AUDIT_OUTCOMES.UNCHANGED,
+            reason: npc.locks?.[field] === true ? 'Field is locked' : 'Field is already populated',
+          };
+          validateFieldOutcome(outcome, AUDIT_OPERATIONS.RECHECK_MISSING);
+          return outcome;
+        }),
+      };
+    }
+
+    const ctx = this.getContext?.();
+    const chatId = this.storage.getChatId(ctx);
+    if (!chatId || !ctx || !Array.isArray(ctx.chat)) {
+      return { success: false, status: 'chat_unavailable', error: 'Active chat is unavailable.' };
+    }
+
+    const { sourceScope, exchangeId, metadata } = this._resolveAuditSourceScope(ctx.chat, chatId, targetId, loaded.state);
+    if (!sourceScope.length) {
+      return { success: false, status: 'source_unavailable', error: 'No usable chat source found for recheck.' };
+    }
+
+    const entryId = `recheck_${chatId}_${targetId}_${Date.now()}`;
+    const pendingEntry = {
+      id: entryId,
+      targetId,
+      sourceScope,
+      exchangeId,
+      reason: 'recheck_missing',
+      fieldSubset: missingFields,
+      createdAt: nowIso(),
+      metadata: {
+        operation: AUDIT_OPERATIONS.RECHECK_MISSING,
+        ...metadata,
+      },
+    };
+
+    const enqueueResult = await this.coordinator.commit({
+      writer: WRITERS.RUNTIME,
+      pendingReviewEntries: [pendingEntry],
+    });
+    if (!enqueueResult.success) {
+      return { success: false, status: 'enqueue_failed', error: enqueueResult.error };
+    }
+
+    const reviewResult = await this.trigger('recheck_missing', { manual: true, ...options });
+
+    const afterLoad = await this.storage.load();
+    const updatedNpc = afterLoad.state?.npcs?.[targetId] || {};
+    const fieldOutcomes = [];
+
+    for (const field of missingFields) {
+      const nextVal = updatedNpc[field];
+      let outcome = AUDIT_OUTCOMES.INSUFFICIENT;
+      let reason = 'No evidence found in review scope';
+
+      if (nextVal !== undefined && nextVal !== null && nextVal !== '' && !(Array.isArray(nextVal) && nextVal.length === 0)) {
+        outcome = AUDIT_OUTCOMES.APPLIED;
+        reason = 'Populated during recheck';
+      } else if (reviewResult.status === 'provider_failed' || reviewResult.status === 'scheduler_error') {
+        outcome = AUDIT_OUTCOMES.UNAVAILABLE;
+        reason = reviewResult.error || 'Provider failure';
+      }
+
+      const outcomeRecord = { field, outcome, reason };
+      validateFieldOutcome(outcomeRecord, AUDIT_OPERATIONS.RECHECK_MISSING);
+      fieldOutcomes.push(outcomeRecord);
+    }
+
+    return {
+      success: reviewResult.status === 'committed',
+      status: reviewResult.status,
+      targetId,
+      missingFields,
+      fieldOutcomes,
+      reviewResult,
+    };
+  }
+
+  /**
+   * Refreshes dossier for an NPC with exhaustive C12 field accounting (OPERATION_MASKS[REFRESH_DOSSIER]).
+   * @param {string} targetId Target NPC ID
+   * @param {object} [options]
+   * @returns {Promise<object>}
+   */
+  async refreshDossier(targetId, options = {}) {
+    if (!targetId || typeof targetId !== 'string') {
+      return { success: false, status: 'invalid_target', error: 'Target ID must be a non-empty string.' };
+    }
+
+    const loaded = await this.storage.load();
+    if (loaded.state?.tombstones?.[targetId]) {
+      return { success: false, status: 'target_tombstoned', targetId, error: `Target NPC '${targetId}' is tombstoned.` };
+    }
+    const npc = loaded.state?.npcs?.[targetId];
+    if (!npc) {
+      return { success: false, status: 'target_not_found', targetId, error: `Target NPC '${targetId}' not found.` };
+    }
+    const busy = this._manualBusyResult('refresh_dossier');
+    if (busy) return { ...busy, targetId, operation: AUDIT_OPERATIONS.REFRESH_DOSSIER };
+
+    const refreshMask = OPERATION_MASKS[AUDIT_OPERATIONS.REFRESH_DOSSIER];
+
+    const ctx = this.getContext?.();
+    const chatId = this.storage.getChatId(ctx);
+    if (!chatId || !ctx || !Array.isArray(ctx.chat)) {
+      return { success: false, status: 'chat_unavailable', error: 'Active chat is unavailable.' };
+    }
+
+    const { sourceScope, exchangeId, metadata } = this._resolveAuditSourceScope(ctx.chat, chatId, targetId, loaded.state);
+    if (!sourceScope.length) {
+      return { success: false, status: 'source_unavailable', error: 'No usable chat source found for refresh.' };
+    }
+
+    const entryId = `refresh_${chatId}_${targetId}_${Date.now()}`;
+    const pendingEntry = {
+      id: entryId,
+      targetId,
+      sourceScope,
+      exchangeId,
+      reason: 'refresh_dossier',
+      fieldSubset: [...refreshMask],
+      createdAt: nowIso(),
+      metadata: {
+        operation: AUDIT_OPERATIONS.REFRESH_DOSSIER,
+        ...metadata,
+      },
+    };
+
+    const enqueueResult = await this.coordinator.commit({
+      writer: WRITERS.RUNTIME,
+      pendingReviewEntries: [pendingEntry],
+    });
+    if (!enqueueResult.success) {
+      return { success: false, status: 'enqueue_failed', error: enqueueResult.error };
+    }
+
+    const reviewResult = await this.trigger('refresh_dossier', { manual: true, ...options });
+
+    const afterLoad = await this.storage.load();
+    const updatedNpc = afterLoad.state?.npcs?.[targetId] || {};
+    const fieldOutcomes = [];
+
+    for (const field of refreshMask) {
+      let outcome = AUDIT_OUTCOMES.UNCHANGED;
+      let reason = 'Unchanged';
+
+      if (npc.locks?.[field] === true) {
+        outcome = AUDIT_OUTCOMES.UNCHANGED;
+        reason = 'Field is locked';
+      } else if (reviewResult.status === 'provider_failed' || reviewResult.status === 'scheduler_error') {
+        outcome = AUDIT_OUTCOMES.UNAVAILABLE;
+        reason = reviewResult.error || 'Provider failure';
+      } else if (reviewResult.status === 'committed') {
+        const prevRev = npc.fieldRevisions?.[field] || 0;
+        const nextRev = updatedNpc.fieldRevisions?.[field] || 0;
+        if (nextRev > prevRev) {
+          outcome = AUDIT_OUTCOMES.APPLIED;
+          reason = 'Updated in dossier refresh';
+        } else {
+          const previousValue = npc[field];
+          const stillBlank = previousValue === undefined || previousValue === null || previousValue === '' || (Array.isArray(previousValue) && previousValue.length === 0);
+          outcome = stillBlank ? AUDIT_OUTCOMES.INSUFFICIENT : AUDIT_OUTCOMES.UNCHANGED;
+          reason = stillBlank ? 'No sufficient evidence found for this dossier field' : 'Retained accepted value';
+        }
+      }
+
+      const outcomeRecord = { field, outcome, reason };
+      validateFieldOutcome(outcomeRecord, AUDIT_OPERATIONS.REFRESH_DOSSIER);
+      fieldOutcomes.push(outcomeRecord);
+    }
+
+    return {
+      success: reviewResult.status === 'committed',
+      status: reviewResult.status,
+      operation: AUDIT_OPERATIONS.REFRESH_DOSSIER,
+      targetId,
+      fieldOutcomes,
+      reviewResult,
+    };
+  }
+
   trigger(reason = 'automatic', options = {}) {
     const chatId = this.storage.getChatId();
     if (!chatId) return Promise.resolve({ status: 'no_chat' });
@@ -300,6 +739,7 @@ export class DevelopmentReviewQueue {
       })
       .finally(() => {
         if (this.inFlightByChat.get(chatId) === job) this.inFlightByChat.delete(chatId);
+        this._notifyStatus({ chatId, phase: 'settled', result: this.lastResultByChat.get(chatId) || null });
         const coalesced = this.coalescedByChat.get(chatId);
         this.coalescedByChat.delete(chatId);
         if (coalesced && this.storage.getChatId() === chatId && !job.yieldedForForeground) {
@@ -310,6 +750,7 @@ export class DevelopmentReviewQueue {
         return undefined;
       });
     this.inFlightByChat.set(chatId, job);
+    this._notifyStatus({ chatId, phase: 'started', reason, manual });
     return job.promise;
   }
 
@@ -520,5 +961,6 @@ export class DevelopmentReviewQueue {
     }
     this.inFlightByChat.clear();
     this.coalescedByChat.clear();
+    this.statusListeners.clear();
   }
 }

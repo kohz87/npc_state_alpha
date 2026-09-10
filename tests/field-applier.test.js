@@ -90,21 +90,28 @@ test('Field Applier: field-level lock blocks automatic writes', () => {
   assert.equal(npc.location, 'sacred grove'); // Untouched
 });
 
-test('Field Applier: manual correction is distinct from lock and not an implicit lock', () => {
+test('Field Applier: manual correction remains distinct from an explicit automatic-write lock (C02, C05)', () => {
   const npc = createDefaultNpcRecord('npc_1', 'Elena');
   npc.mood = 'calm';
   npc.manualCorrections.mood = {
     value: 'calm',
     correctedAt: '2026-09-10T00:00:00Z',
-    note: 'User corrected mood',
+    writer: WRITERS.USER,
+    reason: 'User corrected mood',
   };
-  // No lock set (npc.locks.mood is falsy)
 
-  const res = applyFieldProposal(npc, 'mood', 'alarmed', WRITERS.ONE_PASS);
-  assert.equal(res.applied, true);
+  // A correction alone does not freeze future automatic evolution.
+  const automatic = applyFieldProposal(npc, 'mood', 'alarmed', WRITERS.ONE_PASS);
+  assert.equal(automatic.applied, true);
   assert.equal(npc.mood, 'alarmed');
-  // Manual correction record survives
-  assert.ok(npc.manualCorrections.mood);
+  assert.ok(npc.manualCorrections.mood, 'Correction provenance remains retained separately.');
+
+  // The explicit lock is the mechanism that blocks future automatic writes.
+  npc.locks.mood = true;
+  const locked = applyFieldProposal(npc, 'mood', 'furious', WRITERS.ONE_PASS);
+  assert.equal(locked.applied, false);
+  assert.equal(locked.reason, 'locked');
+  assert.equal(npc.mood, 'alarmed');
 });
 
 test('Field Applier: stable collection operations (add, replace, remove)', () => {
@@ -309,13 +316,13 @@ test('Field Applier (Item A): Alpha strictly requires formId and axes; legacy id
   // Unknown formId resolves to null (Item A)
   assert.equal(npc.currentForm, null);
 
-  // relationshipEvaluation with legacy shifts without axes is unchanged/no-op
+  // relationshipEvaluation with legacy shifts without axes is rejected.
   const legacyRes = applyFieldProposal(npc, 'relationshipEvaluation', {
     shifted: true,
     shifts: { trust: 5 }, // legacy key, not axes!
   }, WRITERS.ONE_PASS);
   assert.equal(legacyRes.applied, false);
-  assert.equal(legacyRes.reason, 'unchanged');
+  assert.match(legacyRes.error, /requires an axes object/i);
   assert.equal(npc.relationship.trust, 0);
 
   // With axes it succeeds
@@ -683,5 +690,29 @@ test('Field Applier (Task 14): explicit zero relationship evaluation returns app
   assert.deepEqual(npc.relationship, initialRel);
 });
 
+test('Field Applier: personality update, remove, and syntax safety preceding locks', () => {
+  const npc = createDefaultNpcRecord('npc_1', 'Elena');
 
+  // 1. Update personality with traits and value
+  const updateRes = applyFieldProposal(npc, 'personality', {
+    traits: ['sharp', 'reserved'],
+    value: 'A sharp, reserved archivist',
+  }, WRITERS.DEVELOPMENT);
+  assert.equal(updateRes.applied, true);
+  assert.deepEqual(npc.personality, {
+    traits: ['sharp', 'reserved'],
+    value: 'A sharp, reserved archivist',
+  });
 
+  // 2. Remove personality
+  const remRes = applyFieldProposal(npc, 'personality', {
+    operation: 'remove',
+  }, WRITERS.DEVELOPMENT);
+  assert.equal(remRes.applied, true);
+  assert.equal(npc.personality, null);
+
+  // 3. Subsequent locks application succeeds cleanly (verifying syntax safety before locks branch)
+  const lockRes = applyFieldProposal(npc, 'locks', { background: true }, WRITERS.USER);
+  assert.equal(lockRes.applied, true);
+  assert.equal(npc.locks.background, true);
+});

@@ -42,6 +42,7 @@ import {
 import {
   applyNpcProposals,
 } from './field-applier.js';
+import { normalizeAlphaSettings } from '../contract/settings.js';
 import {
   resolveSourceReference,
   captureSourceDependency,
@@ -242,12 +243,19 @@ export class CommitCoordinator {
    * @param {import('../state/storage.js').MemoryStorageAdapter} options.storage
    * @param {string} [options.admissionPolicy='named_preferred']
    */
-  constructor({ storage, admissionPolicy = ADMISSION_POLICIES.NAMED_PREFERRED }) {
+  constructor({ storage, admissionPolicy = ADMISSION_POLICIES.NAMED_PREFERRED, settings = null }) {
     if (!storage) {
       throw new Error('CommitCoordinator requires a storage adapter.');
     }
     this.storage = storage;
-    this.admissionPolicy = admissionPolicy;
+    this.setSettings(settings ? { ...settings, admissionPolicy: settings.admissionPolicy ?? admissionPolicy } : { admissionPolicy });
+  }
+
+  /** Updates the single runtime settings snapshot used by admission and mechanics. */
+  setSettings(settings = {}) {
+    this.settings = normalizeAlphaSettings(settings);
+    this.admissionPolicy = this.settings.admissionPolicy;
+    return this.settings;
   }
 
   /**
@@ -292,8 +300,11 @@ export class CommitCoordinator {
     pendingReviewEntries = [],
     pendingReviewResolutions = [],
     pendingReviewUpdates = [],
+    tombstoneProposals = [],
+    restoreProposals = [],
     exchangeContext,
     operationMode = 'commit',
+    userOptions = {},
   }) {
     if (!writer) {
       return { success: false, error: "CommitCoordinator requires declared 'writer' authority." };
@@ -305,6 +316,27 @@ export class CommitCoordinator {
         success: false,
         error: `Unsupported writer '${writer}' at CommitCoordinator boundary.`,
         errorCode: 'invalid_writer',
+      };
+    }
+
+    if (!Array.isArray(tombstoneProposals)) {
+      return { success: false, error: "'tombstoneProposals' must be an array.", errorCode: 'invalid_tombstone_proposals' };
+    }
+    if (!Array.isArray(restoreProposals)) {
+      return { success: false, error: "'restoreProposals' must be an array.", errorCode: 'invalid_restore_proposals' };
+    }
+    if (restoreProposals.length > 0) {
+      return {
+        success: false,
+        error: 'Restoring a tombstoned NPC requires S6 history/recovery; S5 will not fabricate a replacement dossier.',
+        errorCode: 'history_recovery_required',
+      };
+    }
+    if (tombstoneProposals.length > 0 && writer !== WRITERS.USER) {
+      return {
+        success: false,
+        error: 'Manual NPC deletion/tombstoning is reserved for WRITERS.USER.',
+        errorCode: 'tombstone_wrong_writer',
       };
     }
 
@@ -823,7 +855,11 @@ export class CommitCoordinator {
     const targetsToApply = new Map(); // assignedId -> field proposals
 
     for (const [targetKey, fields] of Object.entries(fieldProposals)) {
-      const identity = resolvedIdentityMap.get(targetKey);
+      let identity = resolvedIdentityMap.get(targetKey);
+      if (!identity && workingState.npcs[targetKey]) {
+        identity = { isNew: false, assignedId: targetKey, npc: workingState.npcs[targetKey] };
+        resolvedIdentityMap.set(targetKey, identity);
+      }
       if (!identity) {
         return {
           success: false,
@@ -986,6 +1022,40 @@ export class CommitCoordinator {
       }
     }
 
+    const tombstonedNpcs = [];
+
+    if (tombstoneProposals.length > 0) {
+      if (!workingState.tombstones) workingState.tombstones = {};
+      for (let i = 0; i < tombstoneProposals.length; i++) {
+        const prop = tombstoneProposals[i];
+        if (!prop || typeof prop !== 'object' || Array.isArray(prop)) {
+          return { success: false, error: `Invalid tombstone proposal at index ${i}.`, errorCode: 'invalid_tombstone_proposal' };
+        }
+        const targetId = prop.targetId;
+        if (typeof targetId !== 'string' || targetId.trim() === '') {
+          return { success: false, error: `Tombstone proposal at index ${i} requires non-empty targetId.`, errorCode: 'invalid_tombstone_proposal' };
+        }
+        if (workingState.tombstones[targetId]) {
+          return { success: false, error: `Target NPC '${targetId}' is already tombstoned.`, errorCode: 'already_tombstoned' };
+        }
+        if (!workingState.npcs[targetId]) {
+          return { success: false, error: `Target NPC '${targetId}' does not exist in state.`, errorCode: 'target_not_found' };
+        }
+        const reason = typeof prop.reason === 'string' && prop.reason.trim() !== ''
+          ? prop.reason.trim()
+          : 'User manual deletion';
+        workingState.tombstones[targetId] = {
+          deletedAt: new Date().toISOString(),
+          reason,
+        };
+        delete workingState.npcs[targetId];
+        if (workingState.pendingReview?.entries) {
+          workingState.pendingReview.entries = workingState.pendingReview.entries.filter((entry) => entry.targetId !== targetId);
+        }
+        tombstonedNpcs.push(targetId);
+      }
+    }
+
     // 5. Apply field-scoped proposals to the latest state (C10)
     // Note: unrelated newer live changes survive because we apply field-by-field to latestState
     const appliedSummary = [];
@@ -993,7 +1063,12 @@ export class CommitCoordinator {
     const lockedFieldsByTarget = new Map(); // assignedId -> Set<fieldName>
     for (const [assignedId, fields] of targetsToApply.entries()) {
       const npc = workingState.npcs[assignedId];
-      const applyResult = applyNpcProposals(npc, fields, writer, { resolvedIdentityMap });
+      const applyResult = applyNpcProposals(npc, fields, writer, {
+        resolvedIdentityMap,
+        exchangeId: exchangeContext?.exchangeId || exchangeContext?.messageId || userOptions?.exchangeId,
+        settings: this.settings || userOptions?.settings,
+        ...userOptions,
+      });
       if (!applyResult.applied && applyResult.errors.length > 0) {
         return {
           success: false,
@@ -1626,6 +1701,7 @@ export class CommitCoordinator {
       assignedNpcs: idResolution.assignedNpcs,
       resolvedPendingReviewIds,
       deferredPendingReviewIds,
+      tombstonedNpcs,
     };
   }
 

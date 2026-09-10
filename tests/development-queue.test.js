@@ -436,6 +436,32 @@ test('S4 Queue: new NPC early review drains pending with no-op receipt and prese
   assert.equal(loaded.state.npcs[NPC_ID].development.reviewReceipts.at(-1).status, 'reviewed_no_proposals');
 });
 
+test('S5 Queue notifications: late Development completion publishes bounded start/settled events and unsubscribe is stable', async () => {
+  const fixture = makeHostFixture({ exchanges: 1, reason: 'new_admission' });
+  const provider = new DeferredProvider();
+  const queue = makeQueue(fixture, provider);
+  const events = [];
+  const unsubscribe = queue.subscribe((event) => events.push(event));
+
+  const running = queue.trigger('ui_late_review');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].phase, 'started');
+  assert.equal(events[0].chatId, fixture.host.chatId);
+
+  provider.pending[0].resolve(noOpResponse(provider.calls[0].prompt));
+  const result = await running;
+  assert.equal(result.status, 'committed');
+  assert.equal(events.at(-1).phase, 'settled');
+  assert.equal(events.at(-1).result.status, 'committed');
+
+  const countBeforeUnsubscribe = events.length;
+  unsubscribe();
+  unsubscribe();
+  await queue.trigger('after_unsubscribe');
+  assert.equal(events.length, countBeforeUnsubscribe);
+});
+
 test('S4 Observation follow-up: tentative evidence narrows the original pending scope, does not auto-loop, and manual review reuses owned evidence', async () => {
   const fixture = makeHostFixture({ exchanges: 1, reason: 'new_admission' });
   let phase = 0;
@@ -543,6 +569,20 @@ test('S4 Queue: foreground priority aborts background provider wait and leaves p
   assert.equal((await fixture.storage.load()).state.pendingReview.entries.length, 1);
 });
 
+test('S5 Settings: disabling Development aborts an in-flight background review and preserves pending work', async () => {
+  const fixture = makeHostFixture({ exchanges: 1, reason: 'new_admission' });
+  const provider = new DeferredProvider();
+  const queue = makeQueue(fixture, provider);
+  const running = queue.trigger('background_before_disable');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(provider.calls.length, 1);
+
+  queue.onSettingsChanged({ ...ALPHA_SETTINGS_DEFAULTS, developmentEnabled: false });
+  const result = await running;
+  assert.equal(result.status, 'aborted');
+  assert.equal((await fixture.storage.load()).state.pendingReview.entries.length, 1);
+});
+
 test('S4 Concurrency: provider wait holds no state lock; an unrelated foreground/user commit succeeds while review is waiting', async () => {
   const fixture = makeHostFixture({ exchanges: 1, reason: 'new_admission' });
   const provider = new DeferredProvider();
@@ -582,6 +622,32 @@ test('S4 Concurrency: late Development result cannot overwrite a newer durable f
   const loaded = await fixture.storage.load();
   assert.equal(loaded.state.npcs[NPC_ID].role, 'Chief Royal Archivist');
   assert.equal(loaded.state.pendingReview.entries.length, 1);
+  assert.equal(loaded.state.pendingReview.entries[0].metadata.lastReviewStatus, 'deferred');
+});
+
+test('S5 Concurrency: user lock added while Development is waiting blocks the late field proposal without globally blocking state', async () => {
+  const fixture = makeHostFixture({ exchanges: 1, reason: 'new_admission' });
+  const provider = new DeferredProvider();
+  const queue = makeQueue(fixture, provider);
+  const running = queue.trigger('background_before_lock');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(provider.calls.length, 1);
+
+  const lockCommit = await fixture.coordinator.commit({
+    writer: WRITERS.USER,
+    fieldProposals: { [NPC_ID]: { locks: { role: true } } },
+  });
+  assert.equal(lockCommit.success, true, JSON.stringify(lockCommit));
+
+  provider.pending[0].resolve(roleResponse(provider.calls[0].prompt, 'Senior Archivist'));
+  const result = await running;
+  assert.equal(result.status, 'committed');
+  assert.ok(result.commitResult.deferred.some((item) => item.field === 'role' && item.reason === 'locked'));
+
+  const loaded = await fixture.storage.load();
+  assert.equal(loaded.state.npcs[NPC_ID].role, null, 'Late Development result cannot bypass the newly added lock.');
+  assert.equal(loaded.state.npcs[NPC_ID].locks.role, true);
+  assert.equal(loaded.state.pendingReview.entries.length, 1, 'Blocked source remains pending for later user-directed reconsideration.');
   assert.equal(loaded.state.pendingReview.entries[0].metadata.lastReviewStatus, 'deferred');
 });
 

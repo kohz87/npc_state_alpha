@@ -19,3 +19,4 @@ export * from './identity.js';
 export * from './field-applier.js';
 export * from './relationship-mechanics.js';
 export * from './commit-coordinator.js';
+export * from './user-commands.js';
