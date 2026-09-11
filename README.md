@@ -2,24 +2,24 @@
 
 NPC State Alpha is a SillyTavern continuity extension for roleplay. It keeps a structured per-chat NPC state behind the story, updates immediate scene continuity from finalized assistant messages, and performs durable dossier review asynchronously through a separately selected SillyTavern Connection Manager profile.
 
-Release: **0.1.1**
+Release: **0.1.2**
 Tested host: **SillyTavern 1.18.0**
 
 ## Install
 
-1. Build or obtain `npc_state_alpha-0.1.1.zip`.
+1. Build or obtain `npc_state_alpha-0.1.2.zip`.
 2. Back up important SillyTavern chats before installing or migrating continuity data.
 3. Install/extract the ZIP so the extension directory is `npc_state_alpha` and contains `manifest.json` at its root.
 4. Reload SillyTavern.
-5. Open NPC State Alpha from its launcher and review Settings.
+5. Click the **NPC State α** button near the bottom-right, then open **Settings**. Settings are available before opening a chat; dossiers and review actions require a character or group chat.
 
 The release ZIP contains only the browser runtime. Tests, benchmark scripts, repository documentation, local logs, credentials, SillyTavern profiles, and chat data are not included.
 
-To verify a locally built archive, compare it with `npc_state_alpha-0.1.1.zip.sha256` produced by `npm run package`.
+To verify a locally built archive, compare it with `npc_state_alpha-0.1.2.zip.sha256` produced by `npm run package`.
 
 ## Upgrade from pre-release Alpha
 
-Alpha 0.1.1 keeps the accepted canonical namespace `npc_state_alpha.v1` and storage schema version `1`. S10 introduces no Alpha persistence-schema migration. Updating the extension code therefore leaves existing canonical per-chat Alpha state in place.
+Alpha 0.1.2 keeps the accepted canonical namespace `npc_state_alpha.v1` and storage schema version `1`. S10 introduces no Alpha persistence-schema migration. Updating the extension code therefore leaves existing canonical per-chat Alpha state in place.
 
 After upgrading, reload SillyTavern and confirm that dossiers, relationships, locks/corrections, pending Development state, and the selected Development connection profile are still present. Do not delete chat metadata as part of an extension upgrade.
 
@@ -69,11 +69,11 @@ Native serialization is deterministic for the same state. Parsing validates the 
 
 A native bundle preserves only information already present in canonical Alpha state. It does not fabricate message provenance, history, relationship reasons, checkpoints, observations, or support. Parsing a native bundle does **not** automatically install it into a live chat. A live restore must verify authoritative host history or establish the format-neutral `import_baseline` boundary.
 
-Alpha 0.1.1 exposes the native portability functions through its runtime API; it does not add a last-minute automatic restore/file-picker workflow.
+Alpha 0.1.2 exposes the native portability functions through its runtime API; it does not add a last-minute automatic restore/file-picker workflow.
 
 ## Legacy NPC State Beta compatibility
 
-Alpha 0.1.1 supports one deliberately narrow legacy input:
+Alpha 0.1.2 supports one deliberately narrow legacy input:
 
 - NPC State Beta application version: **0.4.44**
 - Beta source commit: `a34f5f27385b6fba75b8ff5832015ba66ea4d0c2`
@@ -114,6 +114,8 @@ Back up Beta data before any migration. Alpha does not mutate source Beta data.
 
 ## Settings and troubleshooting
 
+Version 0.1.2 improves panel readability with an opaque dark background, explicit control colors, 15px body text, larger spacing, responsive layout, and visible keyboard focus. The panel uses its own scoped palette to keep host theme text shadows and native control colors from obscuring text.
+
 Version 0.1.1 renames the local message-content hashing module to `content-hash.js` after a browser filter blocked its former filename. If upgrading after `ERR_BLOCKED_BY_CLIENT`, update the extension and hard-reload SillyTavern with Ctrl+Shift+R. Hash values, chat state, and settings are preserved.
 
 If Alpha reports a competing automatic owner, disable either Alpha or NPC State Beta's automatic ownership and reload. Alpha deliberately avoids two automatic continuity writers operating at once.
@@ -141,6 +143,6 @@ npm run package
 git diff --check
 ```
 
-`npm run package` produces the installable `dist/` tree plus a deterministic `release/npc_state_alpha-0.1.1.zip` and SHA-256 sidecar. GitHub CI runs the deterministic repository gates without provider credentials, production SillyTavern data, or Beta user data.
+`npm run package` produces the installable `dist/` tree plus a deterministic `release/npc_state_alpha-0.1.2.zip` and SHA-256 sidecar. GitHub CI runs the deterministic repository gates without provider credentials, production SillyTavern data, or Beta user data.
 
 See `docs/core-contract.md` for canonical behavior authority and `DEVELOPMENT.md` for staged engineering evidence.

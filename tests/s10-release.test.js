@@ -232,10 +232,10 @@ const historyHelpers = {
   getMessageSwipeId,
 };
 
-test('S10 release version owners remain 0.1.1 while state/native schemas stay version 1', () => {
+test('S10 release version owners remain 0.1.2 while state/native schemas stay version 1', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
   const manifest = JSON.parse(fs.readFileSync(path.join(rootDir, 'manifest.json'), 'utf8'));
-  assert.equal(pkg.version, '0.1.1');
+  assert.equal(pkg.version, '0.1.2');
   assert.equal(manifest.version, pkg.version);
   assert.equal(ALPHA_NAMESPACE, 'npc_state_alpha.v1');
   assert.equal(ALPHA_SCHEMA_VERSION, 1);
@@ -261,7 +261,7 @@ test('S10 package is deterministic and excludes development/private content', ()
       assert.equal(second.files.some((entry) => entry === forbidden || entry.startsWith(forbidden)), false, `release must exclude ${forbidden}`);
     }
     const checksum = fs.readFileSync(second.checksumPath, 'utf8').trim();
-    assert.equal(checksum, `${second.archiveSha256}  npc_state_alpha-0.1.1.zip`);
+    assert.equal(checksum, `${second.archiveSha256}  npc_state_alpha-0.1.2.zip`);
   });
 });
 

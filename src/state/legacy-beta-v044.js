@@ -164,7 +164,7 @@ function inspectUnsupportedNpcData(raw, npcId, omitted) {
 
 /**
  * Parse and strictly identify the one authoritative legacy format supported by
- * Alpha 0.1.1. Unknown app/schema/format combinations fail closed.
+ * Alpha 0.1.2. Unknown app/schema/format combinations fail closed.
  */
 export function parseLegacyBetaV044Bundle(input) {
   let raw = input;
@@ -186,7 +186,7 @@ export function parseLegacyBetaV044Bundle(input) {
     throw compatibilityError('legacy_beta_unsupported_format_version', `Unsupported legacy bundle format version '${String(cloned.formatVersion)}'.`);
   }
   if (String(cloned.appVersion || '') !== LEGACY_BETA_V044.appVersion) {
-    throw compatibilityError('legacy_beta_unsupported_app_version', `Unsupported legacy Beta app version '${String(cloned.appVersion || 'missing')}'. Alpha 0.1.1 supports only 0.4.44.`);
+    throw compatibilityError('legacy_beta_unsupported_app_version', `Unsupported legacy Beta app version '${String(cloned.appVersion || 'missing')}'. Alpha 0.1.2 supports only 0.4.44.`);
   }
   if (Number(cloned.schemaVersion) !== LEGACY_BETA_V044.schemaVersion) {
     throw compatibilityError('legacy_beta_unsupported_schema_version', `Unsupported legacy Beta schema version '${String(cloned.schemaVersion)}'.`);

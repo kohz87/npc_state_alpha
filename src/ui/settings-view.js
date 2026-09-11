@@ -80,7 +80,7 @@ export class SettingsView {
     return `
       <div class="alpha-settings-container">
         <h3 class="alpha-settings-title">NPC State Alpha Settings</h3>
-        <p class="alpha-settings-desc">All controls below use the canonical Alpha settings registry.</p>
+        <p class="alpha-settings-desc">Choose how NPCs are tracked and when their profiles are reviewed.</p>
 
         <div class="alpha-settings-group">
           <h4 class="alpha-group-title">General</h4>
@@ -89,16 +89,16 @@ export class SettingsView {
             <div class="alpha-setting-help">Controls automatic One-Pass capture and Development scheduling for Alpha.</div>
           </div>
           <div class="alpha-setting-row">
-            <label class="alpha-setting-label">Admission Policy</label>
-            <select class="alpha-setting-admission">
+            <label class="alpha-setting-label" for="alpha-setting-admission">Admission Policy</label>
+            <select id="alpha-setting-admission" class="alpha-setting-admission">
               <option value="${ALPHA_ADMISSION_POLICIES.NAMED_PREFERRED}" ${s.admissionPolicy === ALPHA_ADMISSION_POLICIES.NAMED_PREFERRED ? 'selected' : ''}>Named preferred</option>
               <option value="${ALPHA_ADMISSION_POLICIES.BALANCED_UNIQUE_ROLE_LABEL}" ${s.admissionPolicy === ALPHA_ADMISSION_POLICIES.BALANCED_UNIQUE_ROLE_LABEL ? 'selected' : ''}>Balanced unique role-label</option>
               <option value="${ALPHA_ADMISSION_POLICIES.MANUAL_ONLY}" ${s.admissionPolicy === ALPHA_ADMISSION_POLICIES.MANUAL_ONLY ? 'selected' : ''}>Manual only</option>
             </select>
           </div>
           <div class="alpha-setting-row">
-            <label class="alpha-setting-label">Routine dossier detail budget</label>
-            <select class="alpha-setting-budget">${budgetOptions}</select>
+            <label class="alpha-setting-label" for="alpha-setting-budget">Routine dossier detail budget</label>
+            <select id="alpha-setting-budget" class="alpha-setting-budget">${budgetOptions}</select>
             <div class="alpha-setting-help">Auto aims near four detailed existing dossiers but may expand for correctness. Numeric preference: ${ROUTINE_DOSSIER_BUDGET_MIN}–${ROUTINE_DOSSIER_BUDGET_MAX}.</div>
           </div>
         </div>
@@ -109,18 +109,18 @@ export class SettingsView {
             <label class="alpha-checkbox-label"><input type="checkbox" class="alpha-setting-dev-enabled" ${s.developmentEnabled ? 'checked' : ''} /> <strong>Enable Development review</strong></label>
           </div>
           <div class="alpha-setting-row">
-            <label class="alpha-setting-label">Review cadence</label>
-            <input type="number" min="${DEVELOPMENT_MIN_CADENCE}" max="${DEVELOPMENT_MAX_CADENCE}" class="alpha-setting-cadence" value="${s.developmentCadence}" />
+            <label class="alpha-setting-label" for="alpha-setting-cadence">Review cadence</label>
+            <input id="alpha-setting-cadence" type="number" min="${DEVELOPMENT_MIN_CADENCE}" max="${DEVELOPMENT_MAX_CADENCE}" class="alpha-setting-cadence" value="${s.developmentCadence}" />
             <div class="alpha-setting-help">Accepted immediate exchanges between ordinary existing-NPC reviews. Default ${ALPHA_SETTINGS_DEFAULTS.developmentCadence}; valid ${DEVELOPMENT_MIN_CADENCE}–${DEVELOPMENT_MAX_CADENCE}.</div>
           </div>
           <div class="alpha-setting-row">
-            <label class="alpha-setting-label">Development connection profile</label>
-            <input type="text" class="alpha-setting-profile" value="${escapeHtml(s.developmentConnectionProfile || '')}" placeholder="Select/configure an explicit host profile" />
+            <label class="alpha-setting-label" for="alpha-setting-profile">Development connection profile</label>
+            <input id="alpha-setting-profile" type="text" class="alpha-setting-profile" value="${escapeHtml(s.developmentConnectionProfile || '')}" placeholder="Select/configure an explicit host profile" />
             <div class="alpha-setting-help">Blank leaves Development paused when the provider requires an explicit profile. Alpha does not silently fall back to another route.</div>
           </div>
           <div class="alpha-setting-row">
-            <label class="alpha-setting-label">Response allowance</label>
-            <input type="number" min="${DEVELOPMENT_MIN_RESPONSE_LIMIT}" max="${DEVELOPMENT_MAX_RESPONSE_LIMIT}" class="alpha-setting-limit" value="${s.developmentResponseLimit}" />
+            <label class="alpha-setting-label" for="alpha-setting-limit">Response allowance</label>
+            <input id="alpha-setting-limit" type="number" min="${DEVELOPMENT_MIN_RESPONSE_LIMIT}" max="${DEVELOPMENT_MAX_RESPONSE_LIMIT}" class="alpha-setting-limit" value="${s.developmentResponseLimit}" />
             <div class="alpha-setting-help">Requested Development response-token allowance. Default ${ALPHA_SETTINGS_DEFAULTS.developmentResponseLimit}; valid ${DEVELOPMENT_MIN_RESPONSE_LIMIT}–${DEVELOPMENT_MAX_RESPONSE_LIMIT}.</div>
           </div>
         </div>
@@ -128,18 +128,18 @@ export class SettingsView {
         <div class="alpha-settings-group">
           <h4 class="alpha-group-title">Relationship Mechanics</h4>
           <div class="alpha-setting-row">
-            <label class="alpha-setting-label">Per-axis absolute score cap</label>
-            <input type="number" min="${RELATIONSHIP_SCORE_CAP_MIN}" max="${RELATIONSHIP_SCORE_CAP_MAX}" class="alpha-setting-score-cap" value="${s.relationshipScoreCap}" />
-            <div class="alpha-setting-help">Runtime-only mechanical cap. Default ${ALPHA_SETTINGS_DEFAULTS.relationshipScoreCap}; valid ${RELATIONSHIP_SCORE_CAP_MIN}–${RELATIONSHIP_SCORE_CAP_MAX}.</div>
+            <label class="alpha-setting-label" for="alpha-setting-score-cap">Per-axis absolute score cap</label>
+            <input id="alpha-setting-score-cap" type="number" min="${RELATIONSHIP_SCORE_CAP_MIN}" max="${RELATIONSHIP_SCORE_CAP_MAX}" class="alpha-setting-score-cap" value="${s.relationshipScoreCap}" />
+            <div class="alpha-setting-help">Maximum magnitude of each relationship score. Default ${ALPHA_SETTINGS_DEFAULTS.relationshipScoreCap}; valid ${RELATIONSHIP_SCORE_CAP_MIN}–${RELATIONSHIP_SCORE_CAP_MAX}.</div>
           </div>
           <div class="alpha-setting-row">
-            <label class="alpha-setting-label">Inertia</label>
-            <input type="number" min="${RELATIONSHIP_INERTIA_MIN}" max="${RELATIONSHIP_INERTIA_MAX}" step="0.05" class="alpha-setting-inertia" value="${s.relationshipInertia}" />
-            <div class="alpha-setting-help">Mechanical resistance to large movement near the cap. Default ${ALPHA_SETTINGS_DEFAULTS.relationshipInertia}; valid ${RELATIONSHIP_INERTIA_MIN}–${RELATIONSHIP_INERTIA_MAX}.</div>
+            <label class="alpha-setting-label" for="alpha-setting-inertia">Inertia</label>
+            <input id="alpha-setting-inertia" type="number" min="${RELATIONSHIP_INERTIA_MIN}" max="${RELATIONSHIP_INERTIA_MAX}" step="0.05" class="alpha-setting-inertia" value="${s.relationshipInertia}" />
+            <div class="alpha-setting-help">Resistance to large score changes near the limit. Default ${ALPHA_SETTINGS_DEFAULTS.relationshipInertia}; valid ${RELATIONSHIP_INERTIA_MIN}–${RELATIONSHIP_INERTIA_MAX}.</div>
           </div>
           <div class="alpha-setting-row">
-            <label class="alpha-setting-label">Scoring history limit</label>
-            <input type="number" min="${RELATIONSHIP_HISTORY_LIMIT_MIN}" max="${RELATIONSHIP_HISTORY_LIMIT_MAX}" class="alpha-setting-history-limit" value="${s.relationshipHistoryLimit}" />
+            <label class="alpha-setting-label" for="alpha-setting-history-limit">Scoring history limit</label>
+            <input id="alpha-setting-history-limit" type="number" min="${RELATIONSHIP_HISTORY_LIMIT_MIN}" max="${RELATIONSHIP_HISTORY_LIMIT_MAX}" class="alpha-setting-history-limit" value="${s.relationshipHistoryLimit}" />
             <div class="alpha-setting-help">Bounded retained scored-shift history. Default ${ALPHA_SETTINGS_DEFAULTS.relationshipHistoryLimit}; valid ${RELATIONSHIP_HISTORY_LIMIT_MIN}–${RELATIONSHIP_HISTORY_LIMIT_MAX}.</div>
           </div>
         </div>

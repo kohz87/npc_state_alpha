@@ -79,15 +79,16 @@ export class DossierView {
     return `
       <div class="alpha-dossier-layout">
         <div class="alpha-dossier-sidebar">
+          <div class="alpha-sidebar-heading">Characters <span>${all.length} total</span></div>
           <div class="alpha-filter-bar">
-            <input type="search" class="alpha-search-input" placeholder="Search NPCs" value="${escapeHtml(this.searchQuery)}" />
+            <input type="search" class="alpha-search-input" aria-label="Search NPCs" placeholder="Search NPCs" value="${escapeHtml(this.searchQuery)}" />
             <div class="alpha-filter-selectors">
-              <select class="alpha-filter-life">
+              <select class="alpha-filter-life" aria-label="Filter by life state">
                 <option value="all" ${this.filterLifeState === 'all' ? 'selected' : ''}>All life states</option>
                 <option value="alive" ${this.filterLifeState === 'alive' ? 'selected' : ''}>Alive</option>
                 <option value="dead" ${this.filterLifeState === 'dead' ? 'selected' : ''}>Dead</option>
               </select>
-              <select class="alpha-filter-presence">
+              <select class="alpha-filter-presence" aria-label="Filter by presence">
                 <option value="all" ${this.filterPresence === 'all' ? 'selected' : ''}>All presence</option>
                 <option value="present" ${this.filterPresence === 'present' ? 'selected' : ''}>Present</option>
                 <option value="offscreen" ${this.filterPresence === 'offscreen' ? 'selected' : ''}>Offscreen</option>
@@ -96,7 +97,7 @@ export class DossierView {
           </div>
           <div class="alpha-npc-list">${this._renderList(filtered, selectedNpcId, pendingEntries)}</div>
         </div>
-        <div class="alpha-dossier-main">${selected ? this._renderDetail(selected, pendingEntries, queueStatus) : '<div class="alpha-empty-detail">Select an NPC to inspect its Alpha dossier.</div>'}</div>
+        <div class="alpha-dossier-main">${selected ? this._renderDetail(selected, pendingEntries, queueStatus) : `<div class="alpha-empty-detail"><div class="alpha-welcome-mark" aria-hidden="true">α</div><h3>${all.length ? 'Select a character' : 'No NPCs recorded yet'}</h3><p>${all.length ? 'Choose an NPC from the list to view their current state, profile, and relationships.' : 'Dossiers appear after Alpha captures NPCs from a reply in this chat. You can configure automatic capture in Settings.'}</p></div>`}</div>
       </div>`;
   }
 

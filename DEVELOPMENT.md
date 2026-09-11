@@ -34,7 +34,7 @@
 
 ## Commands, Namespace & Version Decisions
 
-* **Package Version:** `0.1.1` declared in `package.json` (ES Module, Node >= 22.0.0, zero external runtime dependencies).
+* **Package Version:** `0.1.2` declared in `package.json` (ES Module, Node >= 22.0.0, zero external runtime dependencies).
 * **Runtime Namespace:** `npc_state_alpha.v1`
 * **Storage Schema Version:** `1` (integer)
 * **One-Pass Wire Version:** `1` (string)
@@ -42,7 +42,7 @@
 * **Test / Validation Commands:**
   * `npm test` — Executes the deterministic test runner using Node built-in `node --test tests/**/*.test.js`.
   * `npm run validate` — Executes `node scripts/validate.js` verifying module imports, C02 coverage, wire/settings versions, production examples, S2 runtime primitives, S3 host primitives, S4 Development primitives/settings, S5 UI/user commands/relationship mechanics/C14 owner gate, and S6 history/recovery plus Alpha-native portability/import-baseline primitives.
-  * `npm run package` — Executes `node scripts/package.js`, creating the browser runtime distribution in `dist/` plus deterministic `release/npc_state_alpha-0.1.1.zip` and SHA-256 sidecar without dev/test/doc/private files.
+  * `npm run package` — Executes `node scripts/package.js`, creating the browser runtime distribution in `dist/` plus deterministic `release/npc_state_alpha-0.1.2.zip` and SHA-256 sidecar without dev/test/doc/private files.
   * `npm run measure:prompts` — Executes the accepted S7 deterministic prompt-size/hash corpus.
   * `npm run measure:performance` — Executes the S9 deterministic local performance/endurance characterization harness with small/medium/large/stress tiers and integrated session coverage.
   * `git diff --check` — Required final whitespace gate.
@@ -270,3 +270,12 @@
 * Application package/manifest version is 0.1.1. State, native portability, and model wire versions remain unchanged.
 * Validation uses the existing full deterministic suite, repository validation, prompt measurements, performance harness, and release packaging. User-browser filter behavior must be confirmed after updating and reloading; no live user chat/database is accessed.
 * Executed on Node 24.19.0: 573/573 tests PASS, repository validation 0 errors, prompt measurements PASS (16,073 Immediate / 19,053 Development chars), performance/endurance command PASS, packaging PASS, packaged root import PASS, and whitespace check PASS. Distribution and ZIP contain the renamed module with no reference to the former path.
+
+## 0.1.2 — Readable panel and no-chat guidance
+
+* Replaced the compressed global styles with a scoped `src/ui/styles.js` stylesheet. Alpha owns its opaque dark surfaces, control foreground/background colors, 15px body type, 13px helper text, focus outlines, button states, and responsive layout. Every rule is rooted at `#npc-state-alpha-root`; host controls are not restyled.
+* Split branding/close controls from navigation/review actions. Added dossier counts, distinct empty states, readable status badges, settings label associations, and a labeled launcher. Settings remain in Alpha's own panel.
+* A missing host chat identity now shows an onboarding state instead of attempting storage load. Review/retry buttons are disabled without a chat, and direct handler calls return guidance without touching storage/providers. Settings remain available. Storage identity and persistence checks are unchanged.
+* Added a regression for the no-chat state, stale dossier clearing, zero storage/review calls, and settings save without a chat.
+* Browser visual QA is unrun: the available cloud browser blocks both the local preview URL and local HTML file URL by policy. No live SillyTavern/theme or browser-rendering claim is made. Tests use synthetic state only.
+* Executed on Node 24.19.0: 574/574 tests PASS, repository validation 0 errors, prompt measurements PASS (16,073 Immediate / 19,053 Development chars), performance/endurance PASS, packaging PASS (41 runtime files), packaged root import PASS, and whitespace check PASS. Calculated contrast of the configured body/helper/button/primary color pairs is 15.4:1 / 8.6:1 / 10.9:1 / 9.6:1; these are palette calculations, not browser-computed theme measurements.

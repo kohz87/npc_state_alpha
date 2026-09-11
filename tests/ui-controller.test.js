@@ -83,6 +83,40 @@ test('UI Controller: starts closed and opens only when explicitly requested', as
   controller.destroy();
 });
 
+test('UI Controller: no-chat welcome avoids storage and review calls while settings remain usable', async () => {
+  const { controller, storage, queue, adapter, context } = await createUiHarness();
+  storage.getChatId = () => null;
+  let loads = 0;
+  let reviews = 0;
+  storage.load = async () => { loads++; throw new Error('Missing real chat identity'); };
+  queue.reviewPending = queue.retryFailed = async () => { reviews++; };
+  adapter.retryImmediate = async () => { reviews++; };
+  controller.rootElement = { innerHTML: '', querySelector: () => null, querySelectorAll: () => [] };
+  controller.cachedState = { npcs: { old: { id: 'old', name: 'Previous chat NPC' } } };
+
+  await controller.open();
+  assert.equal(loads, 0);
+  assert.equal(controller.cachedState, null);
+  assert.equal(controller.statusMessage, null);
+  assert.match(controller.rootElement.innerHTML, /Open a chat to get started/);
+  assert.match(controller.rootElement.innerHTML, /alpha-btn-review" disabled/);
+  assert.doesNotMatch(controller.rootElement.innerHTML, /Previous chat NPC/);
+
+  await controller.reviewPending();
+  await controller.retryFailed();
+  await controller.retryImmediate();
+  assert.equal(reviews, 0);
+  assert.equal(controller.statusMessage.type, 'info');
+
+  controller.activeTab = 'settings';
+  controller.render();
+  assert.match(controller.rootElement.innerHTML, /NPC State Alpha Settings/);
+  const saved = controller.settingsView.saveSettings({ developmentCadence: 5 });
+  assert.equal(saved.success, true);
+  assert.equal(context.extensionSettings.npc_state_alpha.developmentCadence, 5);
+  assert.equal(loads, 0);
+});
+
 test('UI Controller: chat change clears transient selection and does not churn storage while panel is closed', async () => {
   const { controller, storage } = await createUiHarness();
   const state = createInitialState();
