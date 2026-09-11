@@ -189,6 +189,45 @@ test('Development Controls: Recheck Missing uses only target-owned source scope 
   }
 });
 
+test('Development Controls: Recheck Missing reuses a broad pending exchange without duplicate enqueue or backlog drain', async () => {
+  let inspectedTarget = null;
+  const provider = new ScriptedProvider(({ prompt }) => {
+    inspectedTarget = parseTargets(prompt)[0];
+    return noOpResponse(prompt);
+  });
+  const { queue, storage } = createHarness({ provider, ownedSourceMode: 'pending' });
+
+  const result = await queue.recheckMissingDetails('alice');
+  assert.equal(result.status, 'committed');
+  assert.equal(provider.calls.length, 1, 'A scoped audit must issue exactly one provider request.');
+  assert.ok(inspectedTarget);
+  assert.ok(inspectedTarget.fieldSubset.includes('background'));
+  assert.ok(!inspectedTarget.fieldSubset.includes('role'));
+  assert.ok(!inspectedTarget.fieldSubset.includes('speech'));
+
+  const { state } = await storage.load();
+  assert.equal(state.pendingReview.entries.length, 1, 'The original broad pending review must remain queued.');
+  assert.equal(state.pendingReview.entries[0].id, 'pending_s5_alice');
+  assert.equal(state.pendingReview.entries[0].metadata?.lastReviewStatus, undefined);
+});
+
+test('Development Controls: failed scoped Recheck does not poison the original broad pending review', async () => {
+  const provider = new ScriptedProvider(() => {
+    throw new Error('test provider unavailable');
+  });
+  const { queue, storage } = createHarness({ provider, ownedSourceMode: 'pending' });
+
+  const result = await queue.recheckMissingDetails('alice');
+  assert.equal(result.status, 'provider_failed');
+  assert.equal(provider.calls.length, 1);
+
+  const { state } = await storage.load();
+  assert.equal(state.pendingReview.entries.length, 1);
+  assert.equal(state.pendingReview.entries[0].id, 'pending_s5_alice');
+  assert.equal(state.pendingReview.entries[0].metadata?.lastReviewStatus, undefined);
+  assert.equal(state.pendingReview.entries[0].metadata?.lastFailureCode, undefined);
+});
+
 test('Development Controls: Refresh Dossier uses restricted canonical C12 mask and exhaustive outcomes', async () => {
   let inspectedTarget = null;
   const provider = new ScriptedProvider(({ prompt }) => {
@@ -204,6 +243,25 @@ test('Development Controls: Refresh Dossier uses restricted canonical C12 mask a
   const speechOutcome = result.fieldOutcomes.find((outcome) => outcome.field === 'speech');
   assert.equal(speechOutcome.outcome, 'unchanged');
   assert.match(speechOutcome.reason, /locked/i);
+});
+
+test('Development Controls: Refresh Dossier over a broad pending exchange stays one-shot and leaves backlog intact', async () => {
+  let inspectedTarget = null;
+  const provider = new ScriptedProvider(({ prompt }) => {
+    inspectedTarget = parseTargets(prompt)[0];
+    return noOpResponse(prompt);
+  });
+  const { queue, storage } = createHarness({ provider, ownedSourceMode: 'pending' });
+
+  const result = await queue.refreshDossier('alice');
+  assert.equal(result.status, 'committed');
+  assert.equal(provider.calls.length, 1);
+  assert.deepEqual(new Set(inspectedTarget.fieldSubset), new Set(OPERATION_MASKS[AUDIT_OPERATIONS.REFRESH_DOSSIER]));
+
+  const { state } = await storage.load();
+  assert.equal(state.pendingReview.entries.length, 1);
+  assert.equal(state.pendingReview.entries[0].id, 'pending_s5_alice');
+  assert.equal(state.pendingReview.entries[0].metadata?.lastReviewStatus, undefined);
 });
 
 test('Development Controls: Recheck and Refresh refuse to invent scope from the latest unrelated exchange', async () => {
