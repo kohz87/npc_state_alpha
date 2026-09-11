@@ -183,7 +183,7 @@ test('S5 C14 UI: competing automatic owner is surfaced and Development actions f
   controller.destroy();
 });
 
-test('DossierView: renders canonical Alpha shapes and separates immediate presentation from durable profile', () => {
+test('DossierView: renders canonical Alpha shapes and separates story-facing defaults from diagnostics', () => {
   const view = new DossierView();
   const alice = createDefaultNpcRecord('alice', 'Alice');
   alice.currentPresentation = 'Mud-splashed blue cloak';
@@ -214,20 +214,32 @@ test('DossierView: renders canonical Alpha shapes and separates immediate presen
     source: { sourceRef: 'chat:test_chat:1', excerpt: 'Understood, my lord.', segmentKind: 'narrative' },
     disposition: { role: 'tentative' },
   });
-  const html = view.render({ npcs: { alice }, pendingReview: { entries: [] } }, 'alice');
+  const state = { npcs: { alice }, pendingReview: { entries: [] } };
+  const html = view.render(state, 'alice');
 
-  assert.match(html, /Current Presentation \(Immediate\)/);
+  assert.match(html, /<h4 class="alpha-section-title">Current<\/h4>/);
   assert.match(html, /Mud-splashed blue cloak/);
-  assert.match(html, /Canonical Appearance \(Development\)/);
+  assert.match(html, /Canonical appearance/);
   assert.match(html, /Human form: No visible nonhuman anatomy/);
   assert.match(html, /reserved, curious/);
   assert.match(html, /Taps the ledger twice/);
   assert.match(html, /Promised to protect the archive/);
   assert.match(html, /mira: sister/);
-  assert.match(html, /trust:receptive/);
-  assert.match(html, /Trusted the player with the archive key/);
-  assert.match(html, /Uses clipped court diction/);
-  assert.match(html, /Manual corrections:<\/strong> 1/);
+  assert.match(html, /role="meter"/);
+  assert.match(html, /25\.50/);
+  assert.match(html, />receptive</);
+  assert.match(html, /Show Diagnostics/);
+  assert.doesNotMatch(html, /Trusted the player with the archive key/);
+  assert.doesNotMatch(html, /Uses clipped court diction/);
+  assert.doesNotMatch(html, /Manual corrections:<\/strong> 1/);
+  assert.doesNotMatch(html, />Development Evidence</);
+
+  const diagnosticHtml = view.render(state, 'alice', {}, { showDiagnostics: true });
+  assert.match(diagnosticHtml, /Hide Diagnostics/);
+  assert.match(diagnosticHtml, /Trusted the player with the archive key/);
+  assert.match(diagnosticHtml, /Uses clipped court diction/);
+  assert.match(diagnosticHtml, /Manual corrections:<\/strong> 1/);
+  assert.match(diagnosticHtml, />Development Evidence</);
 });
 
 test('DossierView: canonical dead lifecycle is rendered and filterable', () => {
@@ -240,7 +252,7 @@ test('DossierView: canonical dead lifecycle is rendered and filterable', () => {
   const html = view.render({ npcs: { dead1: dead, alive1: alive }, pendingReview: { entries: [] } }, 'dead1');
   assert.match(html, /Late Captain/);
   assert.doesNotMatch(html, /Living Scout/);
-  assert.match(html, /Dead \/ archived from living presence/);
+  assert.match(html, /status-deceased">Dead/);
 });
 
 test('NpcEditor: renders canonical alive/dead lifecycle and explicit relationship/domain locks', () => {
