@@ -284,6 +284,7 @@ export class CommitCoordinator {
    * @param {Array<object>} [params.pendingReviewUpdates] Runtime-only metadata patches for pending entries
    * @param {object} [params.exchangeContext] Live exchange context for revalidation
    * @param {string} [params.operationMode] 'one_pass' | 'development' | 'manual'
+   * @param {boolean} [params.ephemeralHistoryReplay] Internal S6/S9 replay mode: preserve all commit semantics but return compact history metadata instead of creating a temporary full-state checkpoint. Allowed only with operationMode='history_replay'.
    * @returns {Promise<object>} Commit outcome receipt
    */
   async commit({
@@ -308,6 +309,7 @@ export class CommitCoordinator {
     historyBoundary = null,
     identityOptions = {},
     operationMode = 'commit',
+    ephemeralHistoryReplay = false,
     userOptions = {},
   }) {
     if (!writer) {
@@ -331,6 +333,13 @@ export class CommitCoordinator {
         success: false,
         error: 'Preferred stable identity assignments are reserved for exact S6 history replay.',
         errorCode: 'preferred_identity_wrong_mode',
+      };
+    }
+    if (ephemeralHistoryReplay === true && operationMode !== 'history_replay') {
+      return {
+        success: false,
+        error: 'Ephemeral history replay capture is reserved for exact S6 history replay.',
+        errorCode: 'ephemeral_history_replay_wrong_mode',
       };
     }
 
@@ -1730,21 +1739,24 @@ export class CommitCoordinator {
             .filter(([, value]) => value !== null && value !== undefined),
         )
       : null;
-    const checkpoint = createCheckpoint(workingState, {
-      sourceDependencies,
-      historyBoundary,
-      identityAssignments: idResolution.assignedNpcs.map(({ localRef, assignedId, name, identityKind, aliases }) => ({
-        localRef,
-        assignedId,
-        name,
-        identityKind,
-        identityKey: buildIdentityReplayKey({ localRef, name, identityKind, aliases }),
-        ...(identitySourceProvenance ? { sourceProvenance: identitySourceProvenance } : {}),
-      })),
-      writer,
-      mode: operationMode,
-      description: `Committed ${appliedSummary.length} NPC update(s) via ${writer}`,
-    });
+    const checkpointIdentityAssignments = idResolution.assignedNpcs.map(({ localRef, assignedId, name, identityKind, aliases }) => ({
+      localRef,
+      assignedId,
+      name,
+      identityKind,
+      identityKey: buildIdentityReplayKey({ localRef, name, identityKind, aliases }),
+      ...(identitySourceProvenance ? { sourceProvenance: identitySourceProvenance } : {}),
+    }));
+    const checkpoint = ephemeralHistoryReplay === true
+      ? null
+      : createCheckpoint(workingState, {
+          sourceDependencies,
+          historyBoundary,
+          identityAssignments: checkpointIdentityAssignments,
+          writer,
+          mode: operationMode,
+          description: `Committed ${appliedSummary.length} NPC update(s) via ${writer}`,
+        });
 
     // 10. Atomic persistence to storage via CAS
     // If concurrent write occurred, save will return conflict and NOT mutate storage
@@ -1761,7 +1773,13 @@ export class CommitCoordinator {
     return {
       success: true,
       commitRevision: saveResult.revision,
-      checkpointId: checkpoint.id,
+      checkpointId: checkpoint?.id || null,
+      ...(ephemeralHistoryReplay === true ? {
+        historyCapture: {
+          sourceDependencies: cloneState(sourceDependencies),
+          identityAssignments: cloneState(checkpointIdentityAssignments),
+        },
+      } : {}),
       applied: appliedSummary,
       deferred: deferredProposals,
       rejected: rejectedProposals,
@@ -1887,7 +1905,7 @@ export class CommitCoordinator {
           )
           .map((support) => ({
             ...support,
-            fieldRevision: npc.fieldRevisions[String(support.field).split('.')[0]],
+            fieldRevision: String(npc.fieldRevisions[String(support.field).split('.')[0]]),
           }));
       }
       preservedUserTargets.push(npcId);
@@ -1968,6 +1986,7 @@ export class CommitCoordinator {
     historyBoundary = null,
     identityOptions = {},
     operationMode = writer,
+    ephemeralHistoryReplay = false,
   }) {
     if (!envelope || typeof envelope !== 'object') {
       return { success: false, error: 'Envelope must be an object.' };
@@ -2351,6 +2370,7 @@ export class CommitCoordinator {
       historyBoundary,
       identityOptions,
       operationMode,
+      ephemeralHistoryReplay,
     });
   }
 }

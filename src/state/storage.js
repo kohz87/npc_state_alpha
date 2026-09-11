@@ -52,6 +52,10 @@ export class MemoryStorageAdapter {
       this._revision = fresh.revision;
     }
 
+    // S9 recovery-only optimization: the isolated in-memory replay coordinator
+    // already clones before mutation. In this mode storage may retain/return that
+    // owned reference while preserving schema validation and CAS semantics.
+    this._ephemeralReplay = options.ephemeralReplay === true;
     this._failNextSave = false;
     this._failNextLoad = false;
   }
@@ -110,7 +114,7 @@ export class MemoryStorageAdapter {
     }
 
     return {
-      state: cloneState(this._state),
+      state: this._ephemeralReplay ? this._state : cloneState(this._state),
       revision: this._revision,
     };
   }
@@ -157,10 +161,10 @@ export class MemoryStorageAdapter {
 
     // Atomic update
     const nextRevision = this._revision + 1;
-    const cloned = cloneState(newState);
-    cloned.revision = nextRevision;
+    const stored = this._ephemeralReplay ? newState : cloneState(newState);
+    stored.revision = nextRevision;
 
-    this._state = cloned;
+    this._state = stored;
     this._revision = nextRevision;
 
     return {

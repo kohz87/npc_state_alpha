@@ -21,6 +21,7 @@ import {
   computeContentFingerprint,
 } from './fingerprint.js';
 import {
+  buildChatFingerprintIndex,
   buildPrecedingLineage,
   getMessageSwipeId,
 } from './sillytavern-adapter.js';
@@ -136,16 +137,18 @@ function expectedMetadataForPosition(entry, position) {
   return null;
 }
 
-function createOwnedSourceRecord(chat, chatId, sourceRef, position) {
+function createOwnedSourceRecord(chat, chatId, sourceRef, position, fingerprintIndex = null) {
   const message = chat[position];
   if (!message || message.is_system || typeof message.mes !== 'string') {
     return { valid: false, reason: 'source_missing_or_system' };
   }
   const role = message.is_user ? 'user' : 'assistant';
   const canonicalText = role === 'assistant' ? stripMachineTrailer(message.mes) : message.mes;
-  const fingerprint = computeContentFingerprint(canonicalText);
+  const fingerprint = Array.isArray(fingerprintIndex)
+    ? fingerprintIndex[position]
+    : computeContentFingerprint(canonicalText);
   const swipe = getMessageSwipeId(message);
-  const precedingLineage = buildPrecedingLineage(chat, position);
+  const precedingLineage = buildPrecedingLineage(chat, position, fingerprintIndex);
   return {
     valid: true,
     record: {
@@ -180,6 +183,7 @@ export function buildDevelopmentExchangeContext({ chat, chatId, entries, verifyP
   const sources = new Map();
   const expectedLineages = {};
   const sourceTexts = new Map();
+  const fingerprintIndex = buildChatFingerprintIndex(chat);
   const unavailableEntries = [];
   const usableEntries = [];
 
@@ -194,7 +198,7 @@ export function buildDevelopmentExchangeContext({ chat, chatId, entries, verifyP
         entryValid = false;
         continue;
       }
-      const resolved = createOwnedSourceRecord(chat, chatId, sourceRef, position);
+      const resolved = createOwnedSourceRecord(chat, chatId, sourceRef, position, fingerprintIndex);
       if (!resolved.valid) {
         entryValid = false;
         continue;

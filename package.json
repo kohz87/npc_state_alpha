@@ -10,7 +10,8 @@
     "test": "node --test tests/**/*.test.js",
     "validate": "node scripts/validate.js",
     "package": "node scripts/package.js",
-    "measure:prompts": "node scripts/measure-prompts.js"
+    "measure:prompts": "node scripts/measure-prompts.js",
+    "measure:performance": "node scripts/measure-performance.js"
   },
   "keywords": [
     "sillytavern",

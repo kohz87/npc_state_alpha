@@ -11,14 +11,40 @@ import { validateOwnedSourceRecord } from '../contract/wire-schemas.js';
 
 let checkpointCounter = 0;
 
-// Preserve the first trustworthy base plus a bounded recent suffix. This keeps
-// recovery available without allowing snapshots to grow without limit.
-export const MAX_STORY_CHECKPOINTS = 128;
+// Keep full canonical snapshots, but bound their retained count tightly enough
+// that persistence cost does not grow into the foreground path. Compaction
+// preserves the first trustworthy base, earliest import baseline, a dense recent
+// suffix, and deterministic older recovery anchors.
+export const MAX_STORY_CHECKPOINTS = 32;
+const RECENT_STORY_CHECKPOINTS = 16;
 
 // Any explicit state import/migration that cannot prove pre-import story history
 // establishes this neutral recovery boundary. Native restore and future legacy
 // adapters use the same marker; the core never needs format-specific modes.
 export const IMPORT_BASELINE_MODE = 'import_baseline';
+
+function identityAssignmentCompactionKey(assignment) {
+  return JSON.stringify([
+    assignment?.localRef || null,
+    assignment?.assignedId || null,
+    assignment?.identityKey || null,
+    assignment?.sourceProvenance || null,
+  ]);
+}
+
+function collectCompactedIdentityAssignments(checkpoints) {
+  const seen = new Set();
+  const retained = [];
+  for (const checkpoint of checkpoints || []) {
+    for (const assignment of checkpoint?.identityAssignments || []) {
+      const key = identityAssignmentCompactionKey(assignment);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      retained.push(cloneState(assignment));
+    }
+  }
+  return retained;
+}
 
 /**
  * Projects a source dependency into a compact checkpoint representation.
@@ -137,8 +163,14 @@ export function createCheckpoint(state, metadata = {}) {
 
   state.history.checkpoints.push(checkpoint);
   if (state.history.checkpoints.length > MAX_STORY_CHECKPOINTS) {
-    const firstTrustworthyBase = state.history.checkpoints[0];
-    const firstImportBaseline = state.history.checkpoints.find(
+    const allCheckpoints = state.history.checkpoints;
+    const firstTrustworthyBase = allCheckpoints[0];
+    // Full checkpoints are compacted, but exact NEW identity replay metadata is
+    // much smaller and must survive even when its original admission snapshot
+    // is discarded. Carry the deduplicated historical assignment ledger on the
+    // protected first base; each assignment retains its own source provenance.
+    firstTrustworthyBase.identityAssignments = collectCompactedIdentityAssignments(allCheckpoints);
+    const firstImportBaseline = allCheckpoints.find(
       (candidate) => candidate?.operation?.mode === IMPORT_BASELINE_MODE,
     );
     const protectedCheckpoints = [firstTrustworthyBase];
@@ -146,15 +178,39 @@ export function createCheckpoint(state, metadata = {}) {
       protectedCheckpoints.push(firstImportBaseline);
     }
     const protectedIds = new Set(protectedCheckpoints.map((item) => item.id));
-    const suffixCapacity = MAX_STORY_CHECKPOINTS - protectedCheckpoints.length;
-    const recentSuffix = state.history.checkpoints
-      .filter((item) => !protectedIds.has(item.id))
-      .slice(-suffixCapacity);
+    const ordinary = allCheckpoints.filter((item) => !protectedIds.has(item.id));
+    const recentCapacity = Math.min(
+      RECENT_STORY_CHECKPOINTS,
+      Math.max(0, MAX_STORY_CHECKPOINTS - protectedCheckpoints.length),
+    );
+    const recentSuffix = ordinary.slice(-recentCapacity);
+    const recentIds = new Set(recentSuffix.map((item) => item.id));
+    const older = ordinary.filter((item) => !recentIds.has(item.id));
+    const historicalCapacity = Math.max(
+      0,
+      MAX_STORY_CHECKPOINTS - protectedCheckpoints.length - recentSuffix.length,
+    );
+    let historicalAnchors = older;
+    if (older.length > historicalCapacity) {
+      historicalAnchors = [];
+      if (historicalCapacity === 1) {
+        historicalAnchors.push(older[Math.floor((older.length - 1) / 2)]);
+      } else if (historicalCapacity > 1) {
+        for (let slot = 0; slot < historicalCapacity; slot++) {
+          const index = Math.round(slot * (older.length - 1) / (historicalCapacity - 1));
+          const candidate = older[index];
+          if (candidate && !historicalAnchors.some((item) => item.id === candidate.id)) {
+            historicalAnchors.push(candidate);
+          }
+        }
+      }
+    }
     const retainedIds = new Set([
       ...protectedIds,
+      ...historicalAnchors.map((item) => item.id),
       ...recentSuffix.map((item) => item.id),
     ]);
-    state.history.checkpoints = state.history.checkpoints.filter((item) => retainedIds.has(item.id));
+    state.history.checkpoints = allCheckpoints.filter((item) => retainedIds.has(item.id));
   }
   return checkpoint;
 }

@@ -1,5 +1,5 @@
 /**
- * NPC State Alpha — S8 Repository Validation Script
+ * NPC State Alpha — S9 Repository Validation Script
  *
  * Verifies:
  * - Module imports and dependency reachability
@@ -22,7 +22,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 async function runValidation() {
-  console.log('--- NPC State Alpha: S8 Repository Validation ---');
+  console.log('--- NPC State Alpha: S9 Repository Validation ---');
   let errors = 0;
 
   function fail(msg) {
@@ -702,7 +702,69 @@ async function runValidation() {
     pass('S8 host commit diagnostics surface partial target rejection.');
   }
 
-  console.log(`--- S8 Validation finished with ${errors} error(s) ---`);
+  // 12. S9 performance/endurance/observability surface.
+  const performanceScriptPath = path.join(rootDir, 'scripts/measure-performance.js');
+  if (pkg.scripts?.['measure:performance'] !== 'node scripts/measure-performance.js' || !fs.existsSync(performanceScriptPath)) {
+    fail('S9 standalone performance measurement command/script is missing.');
+  } else {
+    const performanceSource = fs.readFileSync(performanceScriptPath, 'utf8');
+    const requiredWorkloads = ["id: 'small'", "id: 'medium'", "id: 'large'", "id: 'stress'", 'benchmarkIntegratedSession(120)'];
+    if (!performanceSource.includes('npc_state_alpha.s9.performance.v1') || requiredWorkloads.some((needle) => !performanceSource.includes(needle))) {
+      fail('S9 performance harness is missing schema/workload coverage.');
+    } else {
+      pass('S9 standalone deterministic performance harness and workload tiers verified.');
+    }
+  }
+
+  if (runtime.MAX_STORY_CHECKPOINTS !== 32) {
+    fail(`S9 checkpoint bound expected 32, got ${runtime.MAX_STORY_CHECKPOINTS}.`);
+  } else {
+    const checkpointSource = fs.readFileSync(path.join(rootDir, 'src/state/checkpoints.js'), 'utf8');
+    if (!checkpointSource.includes('collectCompactedIdentityAssignments(allCheckpoints)')) {
+      fail('S9 checkpoint compaction does not preserve compact historical identity replay assignments.');
+    } else {
+      pass('S9 checkpoint retention bound and compact identity replay metadata preservation verified.');
+    }
+  }
+
+  if (typeof host.buildChatFingerprintIndex !== 'function' || typeof host.lineageMatchesFingerprintIndex !== 'function') {
+    fail('S9 operation-local lineage indexing helpers are missing from host exports.');
+  } else {
+    pass('S9 operation-local lineage indexing helpers verified.');
+  }
+
+  if (!coordinatorSource.includes("ephemeralHistoryReplay === true && operationMode !== 'history_replay'") ||
+      !coordinatorSource.includes('historyCapture:') ||
+      !coordinatorSource.includes('fieldRevision: String(npc.fieldRevisions')) {
+    fail('S9 replay-only checkpoint optimization or C08 reconstruction binding is missing.');
+  } else {
+    pass('S9 replay-only checkpoint capture and surviving C08 revision binding verified.');
+  }
+
+  const storageSource = fs.readFileSync(path.join(rootDir, 'src/state/storage.js'), 'utf8');
+  if (!storageSource.includes('options.ephemeralReplay === true') || !storageSource.includes('this._ephemeralReplay ? this._state : cloneState(this._state)')) {
+    fail('S9 replay-only in-memory storage optimization is missing or not explicitly gated.');
+  } else {
+    pass('S9 replay-only storage optimization remains explicitly gated from ordinary storage.');
+  }
+
+  const historySource = fs.readFileSync(path.join(rootDir, 'src/host/history-recovery.js'), 'utf8');
+  const developmentQueueSource = fs.readFileSync(path.join(rootDir, 'src/host/development-queue.js'), 'utf8');
+  if (!adapterSource.includes('localPreProviderMs') || !adapterSource.includes('localPostProviderMs') ||
+      !historySource.includes('replayConsidered') || !historySource.includes('durationMs: result.durationMs') ||
+      !developmentQueueSource.includes('localBeforeProviderMs') || !developmentQueueSource.includes('providerDurationMs')) {
+    fail('S9 bounded operational timing/count diagnostics are incomplete.');
+  } else {
+    pass('S9 bounded Immediate/Development/recovery observability verified.');
+  }
+
+  if (!fs.existsSync(path.join(rootDir, 'tests/performance-endurance.test.js'))) {
+    fail('S9 deterministic performance/endurance regression guard file is missing.');
+  } else {
+    pass('S9 deterministic performance/endurance regression guards verified.');
+  }
+
+  console.log(`--- S9 Validation finished with ${errors} error(s) ---`);
   return errors === 0 ? 0 : 1;
 }
 

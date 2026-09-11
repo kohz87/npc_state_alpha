@@ -65,6 +65,14 @@ function valuesEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+function monotonicNowMs() {
+  return globalThis.performance?.now?.() ?? Date.now();
+}
+
+function elapsedMs(startedAt) {
+  return Math.round((monotonicNowMs() - startedAt) * 1000) / 1000;
+}
+
 function compactDependencyKey(dep) {
   if (typeof dep === 'string') return `string:${dep}`;
   return JSON.stringify([
@@ -139,8 +147,10 @@ export function provenanceMatchesCanonicalHistory(
   const message = chat?.[provenance.position];
   if (!message || message.is_system || typeof message.mes !== 'string') return false;
   if (roleOf(message) !== provenance.role) return false;
+  const fingerprintIndex = Array.isArray(helpers.fingerprintIndex) ? helpers.fingerprintIndex : null;
   const canonicalText = provenance.role === 'assistant' ? stripMachineTrailer(message.mes) : message.mes;
-  if (computeContentFingerprint(canonicalText) !== provenance.contentFingerprint) return false;
+  const currentFingerprint = fingerprintIndex?.[provenance.position] || computeContentFingerprint(canonicalText);
+  if (currentFingerprint !== provenance.contentFingerprint) return false;
   if (
     provenance.swipe !== undefined &&
     provenance.swipe !== null &&
@@ -150,6 +160,9 @@ export function provenanceMatchesCanonicalHistory(
     return false;
   }
   const expectedLineage = Array.isArray(provenance.precedingLineage) ? provenance.precedingLineage : [];
+  if (fingerprintIndex && typeof helpers.lineageMatchesFingerprintIndex === 'function') {
+    return helpers.lineageMatchesFingerprintIndex(fingerprintIndex, provenance.position, expectedLineage);
+  }
   const currentLineage = typeof helpers.buildPrecedingLineage === 'function'
     ? helpers.buildPrecedingLineage(chat, provenance.position)
     : [];
@@ -195,13 +208,19 @@ export function analyzeStoryHistory(state, chat, chatId, helpers = {}) {
   const importBaselineIndex = checkpoints.findIndex(
     (checkpoint) => checkpoint?.operation?.mode === IMPORT_BASELINE_MODE,
   );
+  const fingerprintIndex = Array.isArray(helpers.fingerprintIndex)
+    ? helpers.fingerprintIndex
+    : (typeof helpers.buildChatFingerprintIndex === 'function'
+      ? helpers.buildChatFingerprintIndex(chat)
+      : null);
+  const operationHelpers = fingerprintIndex ? { ...helpers, fingerprintIndex } : helpers;
   for (let index = 0; index < checkpoints.length; index++) {
     const checkpoint = checkpoints[index];
     let invalidProvenance = null;
     for (const dependency of checkpoint?.sourceDependencies || []) {
       const provenance = dependency?.capturedProvenance;
       if (!provenance?.chatId) continue;
-      if (!provenanceMatchesCanonicalHistory(provenance, chat, chatId, helpers)) {
+      if (!provenanceMatchesCanonicalHistory(provenance, chat, chatId, operationHelpers)) {
         invalidProvenance = provenance;
         break;
       }
@@ -210,7 +229,7 @@ export function analyzeStoryHistory(state, chat, chatId, helpers = {}) {
     if (
       !invalidProvenance &&
       boundary?.chatId &&
-      !provenanceMatchesCanonicalHistory(boundary, chat, chatId, helpers)
+      !provenanceMatchesCanonicalHistory(boundary, chat, chatId, operationHelpers)
     ) {
       invalidProvenance = boundary;
     }
@@ -283,9 +302,10 @@ function buildReplayExchangeContext(chat, chatId, assistantPosition, helpers) {
   const assistantMessage = chat[assistantPosition];
   const precedingUser = latestPrecedingUser(chat, assistantPosition);
   if (!assistantMessage || !precedingUser) return null;
+  const fingerprintIndex = Array.isArray(helpers.fingerprintIndex) ? helpers.fingerprintIndex : null;
   const assistantNarrative = stripMachineTrailer(assistantMessage.mes);
-  const assistantLineage = helpers.buildPrecedingLineage(chat, assistantPosition);
-  const userLineage = helpers.buildPrecedingLineage(chat, precedingUser.position);
+  const assistantLineage = helpers.buildPrecedingLineage(chat, assistantPosition, fingerprintIndex);
+  const userLineage = helpers.buildPrecedingLineage(chat, precedingUser.position, fingerprintIndex);
   return {
     chatId,
     exchangeId: `${chatId}:${assistantPosition}`,
@@ -294,7 +314,7 @@ function buildReplayExchangeContext(chat, chatId, assistantPosition, helpers) {
       position: precedingUser.position,
       role: 'user',
       text: precedingUser.message.mes,
-      contentFingerprint: computeContentFingerprint(precedingUser.message.mes),
+      contentFingerprint: fingerprintIndex?.[precedingUser.position] || computeContentFingerprint(precedingUser.message.mes),
       precedingLineage: userLineage,
       swipe: helpers.getMessageSwipeId(precedingUser.message),
     },
@@ -303,12 +323,30 @@ function buildReplayExchangeContext(chat, chatId, assistantPosition, helpers) {
       position: assistantPosition,
       role: 'assistant',
       text: assistantMessage.mes,
-      contentFingerprint: computeContentFingerprint(assistantNarrative),
+      contentFingerprint: fingerprintIndex?.[assistantPosition] || computeContentFingerprint(assistantNarrative),
       precedingLineage: assistantLineage,
       swipe: helpers.getMessageSwipeId(assistantMessage),
     },
     requestLineage: assistantLineage,
   };
+}
+
+function buildPortableAssistantOccurrenceCounts(chat, chatId, helpers) {
+  const counts = new Map();
+  const fingerprintIndex = Array.isArray(helpers.fingerprintIndex) ? helpers.fingerprintIndex : null;
+  for (let position = 0; position < chat.length; position++) {
+    const message = chat[position];
+    if (!message || message.is_user || message.is_system || typeof message.mes !== 'string') continue;
+    const contentFingerprint = fingerprintIndex?.[position] || computeContentFingerprint(stripMachineTrailer(message.mes));
+    const signature = portableSourceSignature({
+      chatId,
+      role: 'assistant',
+      swipe: helpers.getMessageSwipeId(message),
+      contentFingerprint,
+    });
+    counts.set(signature, (counts.get(signature) || 0) + 1);
+  }
+  return counts;
 }
 
 function recordHistoricalIdentityAssignment(byAssistant, provenance, assignment) {
@@ -466,6 +504,8 @@ export class StoryHistoryRecovery {
     this.developmentReview = options.developmentReview || null;
     this.helpers = {
       buildPrecedingLineage: options.buildPrecedingLineage,
+      buildChatFingerprintIndex: options.buildChatFingerprintIndex,
+      lineageMatchesFingerprintIndex: options.lineageMatchesFingerprintIndex,
       getMessageSwipeId: options.getMessageSwipeId,
     };
     if (typeof this.helpers.buildPrecedingLineage !== 'function' ||
@@ -491,6 +531,7 @@ export class StoryHistoryRecovery {
   }
 
   async recover({ eventName = 'manual_recovery', messageId = null } = {}) {
+    const recoveryStartedAt = monotonicNowMs();
     const initialContext = this.getContext?.();
     const chatId = this.storage.getChatId?.(initialContext) ||
       initialContext?.chatId ||
@@ -504,7 +545,13 @@ export class StoryHistoryRecovery {
     let developmentInvalidated = false;
     for (let attempt = 0; attempt < 3; attempt++) {
       const loaded = await this.storage.load();
-      const analysis = analyzeStoryHistory(loaded.state, chat, chatId, this.helpers);
+      const fingerprintIndex = typeof this.helpers.buildChatFingerprintIndex === 'function'
+        ? this.helpers.buildChatFingerprintIndex(chat)
+        : null;
+      const operationHelpers = fingerprintIndex
+        ? { ...this.helpers, fingerprintIndex }
+        : this.helpers;
+      const analysis = analyzeStoryHistory(loaded.state, chat, chatId, operationHelpers);
       if (analysis.blocked || !analysis.valid) {
         const result = {
           success: false,
@@ -541,13 +588,16 @@ export class StoryHistoryRecovery {
       const safeCheckpoint = analysis.safeCheckpointIndex >= 0
         ? checkpoints[analysis.safeCheckpointIndex]
         : null;
-      const baseState = stateFromCheckpoint(safeCheckpoint, safeHistory);
+      // Temporary replay does not consult historical checkpoints. Preserve the
+      // safe checkpoint set separately for the final atomic reconstruction, but
+      // keep it out of every ephemeral coordinator clone.
+      const baseState = stateFromCheckpoint(safeCheckpoint, []);
       // Locks are latest user authority, not historical story authority. Replay
       // first, then the durable reconstruction boundary restores the latest locks
       // and correction values atomically.
       for (const npc of Object.values(baseState.npcs || {})) npc.locks = {};
 
-      const tempStorage = new MemoryStorageAdapter(baseState);
+      const tempStorage = new MemoryStorageAdapter(baseState, { ephemeralReplay: true });
       const tempCoordinator = new CommitCoordinator({
         storage: tempStorage,
         admissionPolicy: this.coordinator.admissionPolicy,
@@ -557,8 +607,9 @@ export class StoryHistoryRecovery {
         loaded.state,
         chat,
         chatId,
-        this.helpers,
+        operationHelpers,
       );
+      const portableOccurrenceCounts = buildPortableAssistantOccurrenceCounts(chat, chatId, operationHelpers);
       const replayResults = [];
       const replayedDependencies = [];
       const replayedAssignments = [];
@@ -576,20 +627,16 @@ export class StoryHistoryRecovery {
           replayResults.push({ position, status: 'rejected', reason: 'schema_validation_failed' });
           continue;
         }
-        const exchangeContext = buildReplayExchangeContext(chat, chatId, position, this.helpers);
+        const exchangeContext = buildReplayExchangeContext(chat, chatId, position, operationHelpers);
         if (!exchangeContext) {
           replayResults.push({ position, status: 'rejected', reason: 'owned_user_source_unavailable' });
           continue;
         }
         const signature = sourceSignature(exchangeContext.currentAssistantMessage);
         const portableSignature = `portable|${portableSourceSignature(exchangeContext.currentAssistantMessage)}`;
-        const portableOccurrences = chat.filter((candidate, candidatePosition) => {
-          if (!candidate || candidate.is_user || candidate.is_system || typeof candidate.mes !== 'string') return false;
-          const candidateContext = buildReplayExchangeContext(chat, chatId, candidatePosition, this.helpers);
-          return candidateContext &&
-            portableSourceSignature(candidateContext.currentAssistantMessage) ===
-              portableSourceSignature(exchangeContext.currentAssistantMessage);
-        }).length;
+        const portableOccurrences = portableOccurrenceCounts.get(
+          portableSourceSignature(exchangeContext.currentAssistantMessage),
+        ) || 0;
         let preferredIds = new Map(
           [...(identityHistory.get(signature) || [])].filter(([, assignedId]) => typeof assignedId === 'string'),
         );
@@ -620,9 +667,10 @@ export class StoryHistoryRecovery {
           exchangeContext,
           dedupKeys: [dedupKey],
           pendingReviewEntries,
-          historyBoundary: captureStoryHistoryBoundary(chat, chatId, position, this.helpers),
+          historyBoundary: captureStoryHistoryBoundary(chat, chatId, position, operationHelpers),
           identityOptions: preferredIds.size > 0 ? { preferredIds } : {},
           operationMode: 'history_replay',
+          ephemeralHistoryReplay: true,
         });
         if (!commitResult.success) {
           replayResults.push({
@@ -632,6 +680,10 @@ export class StoryHistoryRecovery {
           });
           continue;
         }
+        if (commitResult.historyCapture) {
+          replayedDependencies.push(...(commitResult.historyCapture.sourceDependencies || []));
+          replayedAssignments.push(...(commitResult.historyCapture.identityAssignments || []));
+        }
         replayResults.push({
           position,
           status: commitResult.replay || commitResult.noop ? 'deduped' : 'replayed',
@@ -640,11 +692,6 @@ export class StoryHistoryRecovery {
       }
 
       const rebuiltLoad = await tempStorage.load();
-      const temporaryCheckpoints = rebuiltLoad.state.history.checkpoints.slice(safeHistory.length);
-      for (const checkpoint of temporaryCheckpoints) {
-        replayedDependencies.push(...(checkpoint.sourceDependencies || []));
-        replayedAssignments.push(...(checkpoint.identityAssignments || []));
-      }
       const reconstructedState = cloneState(rebuiltLoad.state);
       reconstructedState.history = { checkpoints: cloneState(safeHistory) };
 
@@ -739,6 +786,8 @@ export class StoryHistoryRecovery {
         commitRevision: commitResult.commitRevision,
         checkpointId: commitResult.checkpointId,
         processedSourceKeys: [...(finalState.dedup?.processedSourceKeys || [])],
+        durationMs: elapsedMs(recoveryStartedAt),
+        attemptCount: attempt + 1,
       };
       this.lastResultByChat.set(chatId, result);
       this.diagnostics?.record?.({
@@ -746,6 +795,10 @@ export class StoryHistoryRecovery {
         chatId,
         eventName,
         commitRevision: result.commitRevision,
+        durationMs: result.durationMs,
+        attemptCount: result.attemptCount,
+        safeBoundaryPosition: result.safeBoundaryPosition,
+        replayConsidered: replayResults.length,
         replayed: replayResults.filter((item) => item.status === 'replayed').length,
         rejected: replayResults.filter((item) => item.status === 'rejected').length,
       });

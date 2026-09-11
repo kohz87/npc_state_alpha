@@ -43,6 +43,14 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function monotonicNowMs() {
+  return globalThis.performance?.now?.() ?? Date.now();
+}
+
+function elapsedMs(startedAt) {
+  return Math.round((monotonicNowMs() - startedAt) * 1000) / 1000;
+}
+
 function receiptList(envelope) {
   return Array.isArray(envelope?.reviewReceipts)
     ? envelope.reviewReceipts
@@ -790,6 +798,7 @@ export class DevelopmentReviewQueue {
   }
 
   async _runJob(job) {
+    const localStartedAt = monotonicNowMs();
     const settings = this.getSettings();
     if (!settings.enabled || !settings.developmentEnabled) return { status: 'disabled' };
     if (this.storage.getChatId() !== job.chatId) return { status: 'chat_changed_before_dispatch' };
@@ -833,10 +842,15 @@ export class DevelopmentReviewQueue {
       targets: dispatch.targetIds.length,
       pendingEntries: dispatch.entries.length,
       distinctExchanges: unique(dispatch.entries.map((entry) => entry.exchangeId || entry.id)).length,
+      sourceCount: dispatch.exchangeContext?.sources?.size || 0,
+      promptChars: dispatch.prompt.length,
+      localBeforeProviderMs: elapsedMs(localStartedAt),
       manual: job.manual,
     });
 
     let providerResult;
+    const providerStartedAt = monotonicNowMs();
+    let providerDurationMs = null;
     try {
       providerResult = await this.provider.sendReview({
         profileId: settings.developmentConnectionProfile,
@@ -844,15 +858,23 @@ export class DevelopmentReviewQueue {
         maxTokens: settings.developmentResponseLimit,
         signal: job.controller.signal,
       });
+      providerDurationMs = elapsedMs(providerStartedAt);
     } catch (error) {
+      providerDurationMs = elapsedMs(providerStartedAt);
       if (job.controller.signal.aborted || error?.code === 'development_aborted' || error?.name === 'AbortError') {
         return { status: 'aborted', reason: job.yieldedForForeground ? 'foreground_priority' : 'cancelled' };
       }
       await this._markPending(dispatch.entries, 'failed', { lastFailureCode: error?.code || 'development_provider_failed' }).catch(() => {});
-      this._record(DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_FAILED, { chatId: job.chatId, reason: error?.code || 'development_provider_failed' });
+      this._record(DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_FAILED, {
+        chatId: job.chatId,
+        reason: error?.code || 'development_provider_failed',
+        providerDurationMs,
+        localBeforeProviderMs: Math.round((providerStartedAt - localStartedAt) * 1000) / 1000,
+      });
       return { status: 'provider_failed', error: error?.message || String(error) };
     }
 
+    const providerCompletedAt = monotonicNowMs();
     if (providerResult?.usage) this.lastProviderUsageByChat.set(job.chatId, structuredClone(providerResult.usage));
     if (job.controller.signal.aborted) return { status: 'aborted', reason: 'cancelled_after_provider' };
 
@@ -926,6 +948,7 @@ export class DevelopmentReviewQueue {
       sourceScope: [...entry.sourceScope],
     }));
 
+    const commitStartedAt = monotonicNowMs();
     const commitResult = await this.coordinator.commitValidatedEnvelope({
       writer: WRITERS.DEVELOPMENT,
       envelope: parsed.payload,
@@ -951,6 +974,12 @@ export class DevelopmentReviewQueue {
       commitRevision: commitResult.commitRevision,
       resolvedPending: commitResult.resolvedPendingReviewIds?.length || 0,
       deferredPending: commitResult.deferredPendingReviewIds?.length || 0,
+      providerDurationMs,
+      localBeforeProviderMs: Math.round((providerStartedAt - localStartedAt) * 1000) / 1000,
+      localAfterProviderMs: Math.round((monotonicNowMs() - providerCompletedAt) * 1000) / 1000,
+      commitMs: elapsedMs(commitStartedAt),
+      promptChars: dispatch.prompt.length,
+      sourceCount: dispatch.exchangeContext?.sources?.size || 0,
     });
 
     // A successful batch may leave an eligible backlog because C09 caps each

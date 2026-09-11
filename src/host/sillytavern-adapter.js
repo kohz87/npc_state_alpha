@@ -62,19 +62,39 @@ import {
  * @param {number} targetIndex
  * @returns {Array<string>}
  */
-export function buildPrecedingLineage(chat, targetIndex) {
+export function buildChatFingerprintIndex(chat) {
+  if (!Array.isArray(chat)) return [];
+  return chat.map((message) => {
+    if (!message || typeof message.mes !== 'string') return null;
+    const canonicalText = (!message.is_user && !message.is_system)
+      ? stripMachineTrailer(message.mes)
+      : message.mes;
+    return computeContentFingerprint(canonicalText);
+  });
+}
+
+export function lineageMatchesFingerprintIndex(fingerprintIndex, targetIndex, expectedLineage) {
+  if (!Array.isArray(fingerprintIndex) || !Array.isArray(expectedLineage)) return false;
+  if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex > fingerprintIndex.length) return false;
+  let expectedIndex = 0;
+  for (let index = 0; index < targetIndex; index++) {
+    const fingerprint = fingerprintIndex[index];
+    if (!fingerprint) continue;
+    if (expectedLineage[expectedIndex] !== fingerprint) return false;
+    expectedIndex++;
+  }
+  return expectedIndex === expectedLineage.length;
+}
+
+export function buildPrecedingLineage(chat, targetIndex, fingerprintIndex = null) {
   if (!Array.isArray(chat) || targetIndex <= 0) return [];
+  const fingerprints = Array.isArray(fingerprintIndex)
+    ? fingerprintIndex
+    : buildChatFingerprintIndex(chat);
   const lineage = [];
   for (let i = 0; i < targetIndex; i++) {
-    const m = chat[i];
-    if (m && typeof m.mes === 'string') {
-      // Restrict trailer stripping strictly to actual assistant messages with a valid Alpha trailer
-      const clean = (!m.is_user && !m.is_system) ? stripMachineTrailer(m.mes) : m.mes;
-      const fp = computeContentFingerprint(clean);
-      if (fp) {
-        lineage.push(fp);
-      }
-    }
+    const fingerprint = fingerprints[i];
+    if (fingerprint) lineage.push(fingerprint);
   }
   return lineage;
 }
@@ -111,17 +131,19 @@ export function getLatestCommittedAssistantSources(state) {
  * Detects whether the current host chat has diverged from already committed Alpha
  * assistant sources. This is deliberately read-only: S3 never reconstructs history.
  */
-export function detectCommittedBranchDivergence(state, chat, { ignorePosition = null } = {}) {
+export function detectCommittedBranchDivergence(state, chat, { ignorePosition = null, fingerprintIndex = null } = {}) {
   if (!Array.isArray(chat)) return { reason: 'host_chat_unavailable' };
   const committed = getLatestCommittedAssistantSources(state);
+  const canonicalFingerprintIndex = Array.isArray(fingerprintIndex)
+    ? fingerprintIndex
+    : buildChatFingerprintIndex(chat);
   for (const [position, provenance] of committed.entries()) {
     if (position === ignorePosition) continue;
     const message = chat[position];
     if (!message || message.is_user || message.is_system || typeof message.mes !== 'string') {
       return { reason: 'committed_source_missing_or_wrong_role', position };
     }
-    const canonicalNarrative = stripMachineTrailer(message.mes);
-    const fingerprint = computeContentFingerprint(canonicalNarrative);
+    const fingerprint = canonicalFingerprintIndex[position];
     if (fingerprint !== provenance.contentFingerprint) {
       return { reason: 'committed_source_fingerprint_changed', position };
     }
@@ -131,20 +153,25 @@ export function detectCommittedBranchDivergence(state, chat, { ignorePosition = 
         return { reason: 'committed_source_swipe_changed', position };
       }
     }
-    // Exact preceding lineage check (C03):
-    // An earlier user edit can leave assistant text unchanged but invalidate C03 source ownership
+    // Exact preceding lineage check (C03): use the operation-local fingerprint
+    // index so every committed source is checked against identical canonical
+    // bytes without repeatedly hashing the whole preceding chat prefix.
     const expectedLineage = Array.isArray(provenance.precedingLineage)
       ? provenance.precedingLineage
       : [];
-    const currentLineage = buildPrecedingLineage(chat, position);
-    if (
-      currentLineage.length !== expectedLineage.length ||
-      !expectedLineage.every((fp, idx) => currentLineage[idx] === fp)
-    ) {
+    if (!lineageMatchesFingerprintIndex(canonicalFingerprintIndex, position, expectedLineage)) {
       return { reason: 'committed_source_preceding_lineage_changed', position };
     }
   }
   return null;
+}
+
+function monotonicNowMs() {
+  return globalThis.performance?.now?.() ?? Date.now();
+}
+
+function elapsedMs(startedAt) {
+  return Math.round((monotonicNowMs() - startedAt) * 1000) / 1000;
 }
 
 export const DEFAULT_INTERCEPTOR_KEY = 'npc_state_alpha_generate_interceptor';
@@ -207,6 +234,8 @@ export class SillyTavernAdapter {
       diagnostics: this.diagnostics,
       getContext: () => this.getContext(),
       buildPrecedingLineage,
+      buildChatFingerprintIndex,
+      lineageMatchesFingerprintIndex,
       getMessageSwipeId,
     });
   }
@@ -445,6 +474,7 @@ export class SillyTavernAdapter {
    * @param {string} [type='normal'] Generation type ('normal', 'swipe', 'continue', etc.)
    */
   async handleGenerateInterceptor(chat, contextSize, abort, type = 'normal') {
+    const localStartedAt = monotonicNowMs();
     try {
       const chatId = this.storage.getChatId();
       if (!chatId) {
@@ -552,6 +582,10 @@ export class SillyTavernAdapter {
       // Map back to exact ctx.chat record using content/role/swipe/revision/lineage, and fail closed if ambiguous.
       const ctx = this.getContext();
       const rawChat = Array.isArray(ctx?.chat) ? ctx.chat : [];
+      const coreFingerprintIndex = buildChatFingerprintIndex(chat);
+      const rawFingerprintIndex = rawChat === chat
+        ? coreFingerprintIndex
+        : buildChatFingerprintIndex(rawChat);
 
       if (rawChat.length === 0) {
         this.inFlightRequest = null;
@@ -600,9 +634,7 @@ export class SillyTavernAdapter {
               lineageMatch = false;
               break;
             }
-            const cClean = (!cMsg.is_user && !cMsg.is_system && typeof cMsg.mes === 'string') ? stripMachineTrailer(cMsg.mes) : (cMsg.mes || '');
-            const rClean = (!rMsg.is_user && !rMsg.is_system && typeof rMsg.mes === 'string') ? stripMachineTrailer(rMsg.mes) : (rMsg.mes || '');
-            if (computeContentFingerprint(cClean) !== computeContentFingerprint(rClean)) {
+            if (coreFingerprintIndex[cIdx] !== rawFingerprintIndex[rIdx]) {
               lineageMatch = false;
               break;
             }
@@ -658,7 +690,7 @@ export class SillyTavernAdapter {
 
       // 4. Exact C03 lineage grounded in authoritative rawChat:
       // current:user precedingLineage fingerprints the owned narrative sequence BEFORE the user message in rawChat
-      const userPrecedingLineage = buildPrecedingLineage(rawChat, userPos);
+      const userPrecedingLineage = buildPrecedingLineage(rawChat, userPos, rawFingerprintIndex);
 
       // current:assistant precedingLineage represents the exact owned prefix through current:user
       const asstPrecedingLineage = [...userPrecedingLineage];
@@ -683,14 +715,6 @@ export class SillyTavernAdapter {
         timestamp: Date.now(),
       };
 
-      this.diagnostics.record({
-        type: DIAGNOSTIC_EVENT_TYPES.GENERATION_INTERCEPTED,
-        chatId,
-        userMsgIndex: userPos,
-        coreUserIndex,
-        generationType: type,
-      });
-
       // 6. Load latest committed Alpha continuity for this chat. Branch replacement
       // events never mutate history here; S3 detects them and fails closed instead of
       // implementing S6 rollback/reconstruction through a second state path.
@@ -709,7 +733,10 @@ export class SillyTavernAdapter {
       const targetPos = isSwipeOrRegen
         ? (rawChat[userPos + 1] && !rawChat[userPos + 1].is_user ? userPos + 1 : (rawChat.length - 1 > userPos ? rawChat.length - 1 : null))
         : null;
-      const branchDivergence = state ? detectCommittedBranchDivergence(state, rawChat, { ignorePosition: targetPos }) : null;
+      const branchDivergence = state ? detectCommittedBranchDivergence(state, rawChat, {
+        ignorePosition: targetPos,
+        fingerprintIndex: rawFingerprintIndex,
+      }) : null;
       if (branchDivergence) {
         this.inFlightRequest.branchUnsafe = branchDivergence;
         this.diagnostics.record({
@@ -778,6 +805,18 @@ export class SillyTavernAdapter {
           });
         }
       }
+      this.diagnostics.record({
+        type: DIAGNOSTIC_EVENT_TYPES.GENERATION_INTERCEPTED,
+        chatId,
+        userMsgIndex: userPos,
+        coreUserIndex,
+        generationType: type,
+        localPreProviderMs: elapsedMs(localStartedAt),
+        chatMessageCount: rawChat.length,
+        npcCount: Object.keys(state?.npcs || {}).length,
+        promptChars: promptText.length,
+        historyStatus: historyCheck.status,
+      });
     } catch (err) {
       this.inFlightRequest = null;
       this.diagnostics.record({
@@ -803,6 +842,7 @@ export class SillyTavernAdapter {
   }
 
   async _processMessageReceived(messageId, eventType) {
+    const localStartedAt = monotonicNowMs();
     try {
       const chatId = this.storage.getChatId();
       // Continuation is normalized later by the accepted S3 path: the host has
@@ -851,6 +891,7 @@ export class SillyTavernAdapter {
 
       const ctx = this.getContext();
       const chat = Array.isArray(ctx?.chat) ? ctx.chat : [];
+      const chatFingerprintIndex = buildChatFingerprintIndex(chat);
 
       // Finding 1: Finalized-only streaming guard.
       // SillyTavern 1.18.0 getContext exposes streamingProcessor.
@@ -1000,7 +1041,7 @@ export class SillyTavernAdapter {
       }
 
       // Lineage Guard: candidate's actual preceding lineage must match in-flight expected assistant lineage
-      const actualPrecedingLineage = buildPrecedingLineage(chat, numericPosition);
+      const actualPrecedingLineage = buildPrecedingLineage(chat, numericPosition, chatFingerprintIndex);
       const expectedLineage = capturedRequest.precedingLineage;
       const lineageMatches =
         actualPrecedingLineage.length === expectedLineage.length &&
@@ -1161,6 +1202,7 @@ export class SillyTavernAdapter {
 
       const divergence = detectCommittedBranchDivergence(storedStateObj, chat, {
         ignorePosition: (isContinuation || isSwipeOrRegenerate) ? numericPosition : null,
+        fingerprintIndex: chatFingerprintIndex,
       });
       if (divergence) {
         this.diagnostics.record({
@@ -1244,6 +1286,7 @@ export class SillyTavernAdapter {
       }
 
       // Commit through CommitCoordinator with writer one_pass
+      const commitStartedAt = monotonicNowMs();
       const commitResult = await this.coordinator.commitValidatedEnvelope({
         writer: WRITERS.ONE_PASS,
         envelope: parseResult.payload,
@@ -1252,7 +1295,7 @@ export class SillyTavernAdapter {
         dedupKeys: [dedupKey],
         pendingReviewEntries,
         historyBoundary: captureStoryHistoryBoundary(chat, chatId, numericPosition, {
-          buildPrecedingLineage,
+          buildPrecedingLineage: (messages, position) => buildPrecedingLineage(messages, position, chatFingerprintIndex),
           getMessageSwipeId,
         }),
       });
@@ -1291,6 +1334,11 @@ export class SillyTavernAdapter {
             commitRevision: commitResult.commitRevision,
             assignedNpcs: commitResult.assignedNpcs,
             rejected: commitResult.rejected || [],
+            localPostProviderMs: elapsedMs(localStartedAt),
+            commitMs: elapsedMs(commitStartedAt),
+            proposalCount: parseResult.payload.proposals?.length || 0,
+            rejectedCount: commitResult.rejected?.length || 0,
+            chatMessageCount: chat.length,
           });
         }
         // Never await background Development work on the foreground roleplay path.
@@ -1301,6 +1349,10 @@ export class SillyTavernAdapter {
           error: commitResult.error,
           conflict: commitResult.conflict,
           errorCode: commitResult.errorCode,
+          localPostProviderMs: elapsedMs(localStartedAt),
+          commitMs: elapsedMs(commitStartedAt),
+          proposalCount: parseResult.payload.proposals?.length || 0,
+          chatMessageCount: chat.length,
         });
       }
     } catch (err) {
