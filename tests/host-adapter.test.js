@@ -27,6 +27,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -2491,37 +2492,44 @@ ${TRAILER_TAG_CLOSE}`;
 });
 
 test('S3 Packaging: dist contains valid manifest, runtime entrypoint, and excludes non-runtime files', async () => {
-  const distDir = path.join(rootDir, 'dist');
-  const manifestPath = path.join(distDir, 'manifest.json');
-  assert.ok(fs.existsSync(manifestPath), 'dist/manifest.json must exist');
+  const { buildPackage } = await import('../scripts/package.js');
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'npc-state-alpha-s3-package-'));
+  try {
+    const built = buildPackage({
+      distDir: path.join(tempRoot, 'dist'),
+      releaseDir: path.join(tempRoot, 'release'),
+    });
+    const distDir = built.distDir;
+    const manifestPath = path.join(distDir, 'manifest.json');
+    assert.ok(fs.existsSync(manifestPath), 'dist/manifest.json must exist');
 
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  assert.equal(manifest.js, 'index.js');
-  assert.equal(manifest.generate_interceptor, 'npc_state_alpha_generate_interceptor');
-  assert.ok(
-    !manifest.author || !manifest.author.toLowerCase().includes('google'),
-    'Author attribution must not reference Google'
-  );
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.equal(manifest.js, 'index.js');
+    assert.equal(manifest.generate_interceptor, 'npc_state_alpha_generate_interceptor');
+    assert.ok(
+      !manifest.author || !manifest.author.toLowerCase().includes('google'),
+      'Author attribution must not reference Google'
+    );
 
-  const indexPath = path.join(distDir, 'index.js');
-  assert.ok(fs.existsSync(indexPath), 'dist/index.js must exist');
+    const indexPath = path.join(distDir, 'index.js');
+    assert.ok(fs.existsSync(indexPath), 'dist/index.js must exist');
 
-  // Verify runtime entrypoint can be imported and exports required functions
-  const distModule = await import(`file://${indexPath.replace(/\\/g, '/')}`);
-  assert.equal(typeof distModule.initExtension, 'function');
-  assert.equal(typeof distModule.getActiveAdapter, 'function');
+    const distModule = await import(`file://${indexPath.replace(/\\/g, '/')}`);
+    assert.equal(typeof distModule.initExtension, 'function');
+    assert.equal(typeof distModule.getActiveAdapter, 'function');
 
-  // Verify runtime directories exist
-  assert.ok(fs.existsSync(path.join(distDir, 'src', 'contract')));
-  assert.ok(fs.existsSync(path.join(distDir, 'src', 'runtime')));
-  assert.ok(fs.existsSync(path.join(distDir, 'src', 'state')));
-  assert.ok(fs.existsSync(path.join(distDir, 'src', 'host')));
+    assert.ok(fs.existsSync(path.join(distDir, 'src', 'contract')));
+    assert.ok(fs.existsSync(path.join(distDir, 'src', 'runtime')));
+    assert.ok(fs.existsSync(path.join(distDir, 'src', 'state')));
+    assert.ok(fs.existsSync(path.join(distDir, 'src', 'host')));
 
-  // Verify development/test/doc files are strictly excluded
-  assert.ok(!fs.existsSync(path.join(distDir, 'tests')), 'dist must not include tests/');
-  assert.ok(!fs.existsSync(path.join(distDir, 'docs')), 'dist must not include docs/');
-  assert.ok(!fs.existsSync(path.join(distDir, 'scripts')), 'dist must not include scripts/');
-  assert.ok(!fs.existsSync(path.join(distDir, '.git')), 'dist must not include .git/');
+    assert.ok(!fs.existsSync(path.join(distDir, 'tests')), 'dist must not include tests/');
+    assert.ok(!fs.existsSync(path.join(distDir, 'docs')), 'dist must not include docs/');
+    assert.ok(!fs.existsSync(path.join(distDir, 'scripts')), 'dist must not include scripts/');
+    assert.ok(!fs.existsSync(path.join(distDir, '.git')), 'dist must not include .git/');
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('S3 Host Regression: Streaming error candidate with valid trailer is rejected and does not commit; successful streaming commits', async () => {

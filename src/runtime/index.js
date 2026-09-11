@@ -15,6 +15,7 @@ export * from '../state/schema.js';
 export * from '../state/storage.js';
 export * from '../state/checkpoints.js';
 export * from '../state/portable-state.js';
+export * from '../state/legacy-beta-v044.js';
 export * from './source-resolver.js';
 export * from './identity.js';
 export * from './field-applier.js';

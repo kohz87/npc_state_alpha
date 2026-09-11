@@ -1,5 +1,5 @@
 /**
- * NPC State Alpha — S9 Repository Validation Script
+ * NPC State Alpha — S10 Repository Validation Script
  *
  * Verifies:
  * - Module imports and dependency reachability
@@ -11,6 +11,7 @@
  * - S6 checkpoint metadata, history reconstruction, delayed-work reconciliation, native portability, and reload hooks
  * - S7 prompt/context measurement, selective projection, wire guidance, and provider independence
  * - S8 behavioral matrix, partial-acceptance isolation, graph endpoint safety, and model-evidence replay
+ * - S9 performance/endurance guards and S10 release, CI, packaging, and legacy compatibility boundaries
  */
 
 import fs from 'node:fs';
@@ -22,7 +23,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 async function runValidation() {
-  console.log('--- NPC State Alpha: S9 Repository Validation ---');
+  console.log('--- NPC State Alpha: S10 Repository Validation ---');
   let errors = 0;
 
   function fail(msg) {
@@ -764,7 +765,105 @@ async function runValidation() {
     pass('S9 deterministic performance/endurance regression guards verified.');
   }
 
-  console.log(`--- S9 Validation finished with ${errors} error(s) ---`);
+  // 13. S10 release / compatibility / CI surface.
+  const releaseManifest = JSON.parse(fs.readFileSync(path.join(rootDir, 'manifest.json'), 'utf8'));
+  if (pkg.version !== '0.1.0' || releaseManifest.version !== pkg.version) {
+    fail(`S10 release version mismatch: package=${pkg.version}, manifest=${releaseManifest.version}.`);
+  } else if (runtime.ALPHA_SCHEMA_VERSION !== 1 || runtime.ALPHA_NATIVE_BUNDLE_VERSION !== 1) {
+    fail('S10 application release must not silently bump canonical state/native format versions.');
+  } else {
+    pass('S10 application version 0.1.0 is aligned while canonical state/native format remain version 1.');
+  }
+
+  const releasePackageSource = fs.readFileSync(packageScriptPath, 'utf8');
+  if (!releasePackageSource.includes('writeDeterministicZip') ||
+      !releasePackageSource.includes('FIXED_DOS_DATE = 33') ||
+      !releasePackageSource.includes('archiveSha256') ||
+      !releasePackageSource.includes('buildPackage(options = {})')) {
+    fail('S10 deterministic standalone ZIP/checksum packaging surface is incomplete.');
+  } else {
+    pass('S10 deterministic release ZIP/checksum packaging surface verified.');
+  }
+
+  const legacyPath = path.join(rootDir, 'src/state/legacy-beta-v044.js');
+  const requiredLegacyExports = [
+    'parseLegacyBetaV044Bundle',
+    'previewLegacyBetaV044Import',
+    'convertLegacyBetaV044ToAlpha',
+    'installLegacyBetaV044Bundle',
+  ];
+  if (!fs.existsSync(legacyPath) || requiredLegacyExports.some((name) => typeof runtime[name] !== 'function')) {
+    fail('S10 legacy Beta v0.4.44 adapter/export surface is incomplete.');
+  } else if (runtime.LEGACY_BETA_V044?.appVersion !== '0.4.44' ||
+      runtime.LEGACY_BETA_V044?.format !== 'npc_state_v3_bundle' ||
+      runtime.LEGACY_BETA_V044?.formatVersion !== 1 ||
+      runtime.LEGACY_BETA_V044?.schemaVersion !== 1 ||
+      runtime.LEGACY_BETA_V044?.sourceCommit !== 'a34f5f27385b6fba75b8ff5832015ba66ea4d0c2') {
+    fail('S10 authoritative Beta compatibility tuple is not pinned exactly to v0.4.44 source evidence.');
+  } else {
+    pass('S10 exact Beta v0.4.44 compatibility tuple and adapter exports verified.');
+  }
+
+  const legacySource = fs.readFileSync(legacyPath, 'utf8');
+  if (!legacySource.includes("LEGACY_BETA_V044_IMPORT_CONFIRMATION = 'IMPORT_BETA_V044_INTO_EMPTY_ALPHA'") ||
+      !legacySource.includes('legacy_beta_history_boundary_required') ||
+      !legacySource.includes('IMPORT_BASELINE_MODE') ||
+      !legacySource.includes('legacy_beta_alpha_state_not_empty') ||
+      /from\s+['\"][^'\"]*npc_state_beta/i.test(legacySource)) {
+    fail('S10 legacy adapter is missing explicit import safety or has an illegal Beta runtime dependency.');
+  } else {
+    pass('S10 legacy import confirmation, empty-target, history-boundary/import-baseline, and no-Beta-runtime rules verified.');
+  }
+
+  const readmePath = path.join(rootDir, 'README.md');
+  if (!fs.existsSync(readmePath)) {
+    fail('S10 release README.md is missing.');
+  } else {
+    const readme = fs.readFileSync(readmePath, 'utf8');
+    const requiredReadmeMarkers = [
+      'SillyTavern 1.18.0',
+      'developmentConnectionProfile',
+      'npc_state_alpha.native_state',
+      'NPC State Beta application version: **0.4.44**',
+      '**Beta 0.5.38 is not supported for migration.**',
+      'IMPORT_BETA_V044_INTO_EMPTY_ALPHA',
+      'npm run measure:performance',
+    ];
+    if (requiredReadmeMarkers.some((marker) => !readme.includes(marker))) {
+      fail('S10 README is missing required install/profile/portability/legacy/release documentation.');
+    } else {
+      pass('S10 release/install/upgrade/profile/portability/legacy documentation verified.');
+    }
+  }
+
+  const ciPath = path.join(rootDir, '.github/workflows/ci.yml');
+  if (!fs.existsSync(ciPath)) {
+    fail('S10 GitHub CI workflow is missing.');
+  } else {
+    const ci = fs.readFileSync(ciPath, 'utf8');
+    const requiredCiCommands = [
+      'npm test',
+      'npm run validate',
+      'npm run measure:prompts',
+      'npm run measure:performance',
+      'npm run package',
+      'git diff --check',
+      'actions/upload-artifact@v4',
+    ];
+    if (requiredCiCommands.some((command) => !ci.includes(command)) || /GEMINI|OPENAI_API_KEY|ANTHROPIC_API_KEY/i.test(ci)) {
+      fail('S10 CI workflow is missing deterministic gates or introduces forbidden provider credentials.');
+    } else {
+      pass('S10 single offline-safe GitHub CI/release-artifact workflow verified.');
+    }
+  }
+
+  if (!fs.existsSync(path.join(rootDir, 'tests/s10-release.test.js'))) {
+    fail('S10 release/upgrade/legacy compatibility regression matrix is missing.');
+  } else {
+    pass('S10 release, clean-install, upgrade, native, and legacy regression matrix verified.');
+  }
+
+  console.log(`--- S10 Validation finished with ${errors} error(s) ---`);
   return errors === 0 ? 0 : 1;
 }
 

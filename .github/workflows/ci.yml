@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Tests
+        run: npm test
+
+      - name: Repository validation
+        run: npm run validate
+
+      - name: Prompt freeze
+        run: npm run measure:prompts
+
+      - name: Performance and endurance characterization
+        run: npm run measure:performance
+
+      - name: Build release artifact
+        run: npm run package
+
+      - name: Whitespace check
+        run: git diff --check
+
+      - name: Upload deterministic release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npc_state_alpha-release
+          path: |
+            release/*.zip
+            release/*.sha256
+          if-no-files-found: error
