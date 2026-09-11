@@ -6,6 +6,8 @@
  * undocumented provider route.
  */
 
+import { normalizeAlphaSettings } from '../contract/settings.js';
+
 export const CONNECTION_MANAGER_SHARED_MODULE = '/scripts/extensions/shared.js';
 export const DEVELOPMENT_REASONING_EFFORT_VALUES = Object.freeze(['auto', 'low', 'medium', 'high']);
 
@@ -64,6 +66,7 @@ function reasoningOverride(reasoningEffort) {
 export class SillyTavernDevelopmentProvider {
   constructor(options = {}) {
     this.moduleLoader = options.moduleLoader || ((specifier) => import(specifier));
+    this.getContext = options.getContext || (() => globalThis.SillyTavern?.getContext?.());
     this.requiresConfiguredProfile = true;
   }
 
@@ -141,14 +144,17 @@ export class SillyTavernDevelopmentProvider {
    * overridePayload argument to request a bounded reasoning effort while the
    * selected profile remains the owner of provider/model/routing credentials.
    */
-  async sendReview({ profileId, prompt, maxTokens, signal, reasoningEffort = 'low' }) {
+  async sendReview({ profileId, prompt, maxTokens, signal, reasoningEffort }) {
     if (typeof profileId !== 'string' || profileId.trim() === '') {
       throw new DevelopmentProviderError('Development connection profile is not configured.', 'development_profile_required');
     }
     if (typeof prompt !== 'string' || prompt.trim() === '') {
       throw new DevelopmentProviderError('Development review prompt must be non-empty.', 'invalid_development_prompt');
     }
-    const overridePayload = reasoningOverride(reasoningEffort);
+    const configuredEffort = reasoningEffort ?? normalizeAlphaSettings(
+      this.getContext?.()?.extensionSettings?.npc_state_alpha || {},
+    ).developmentReasoningEffort;
+    const overridePayload = reasoningOverride(configuredEffort);
     const service = await this._service();
     // SillyTavern 1.18.0 getProfile() throws when the ID is absent. Normalize both
     // throwing and null-returning host implementations to Alpha's stable code.
