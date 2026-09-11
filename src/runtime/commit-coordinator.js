@@ -867,6 +867,8 @@ export class CommitCoordinator {
     // A stale/missing read token for proposed field X defers X only;
     // unrelated field Y whose token matches applies.
     const deferredProposals = [];
+    const rejectedProposals = [];
+    const rejectedTargetIds = new Set();
     const targetsToApply = new Map(); // assignedId -> field proposals
 
     for (const [targetKey, fields] of Object.entries(fieldProposals)) {
@@ -1078,19 +1080,37 @@ export class CommitCoordinator {
     const lockedFieldsByTarget = new Map(); // assignedId -> Set<fieldName>
     for (const [assignedId, fields] of targetsToApply.entries()) {
       const npc = workingState.npcs[assignedId];
-      const applyResult = applyNpcProposals(npc, fields, writer, {
+      // Evaluate each target on an isolated candidate. A state-incompatible
+      // existing One-Pass target may be rejected without leaking a partial
+      // mutation into an otherwise independent sibling proposal (C04).
+      const candidateNpc = cloneState(npc);
+      const canonicalNpcs = { ...workingState.npcs, [assignedId]: candidateNpc };
+      const applyResult = applyNpcProposals(candidateNpc, fields, writer, {
         resolvedIdentityMap,
+        canonicalNpcs,
         exchangeId: exchangeContext?.exchangeId || exchangeContext?.messageId || userOptions?.exchangeId,
         settings: this.settings || userOptions?.settings,
         ...userOptions,
       });
       if (!applyResult.applied && applyResult.errors.length > 0) {
+        const isNewTarget = idResolution.assignedNpcs.some((assigned) => assigned.assignedId === assignedId);
+        if (writer === WRITERS.ONE_PASS && !isNewTarget) {
+          rejectedTargetIds.add(assignedId);
+          rejectedProposals.push({
+            targetId: assignedId,
+            fields: Object.keys(fields).filter((field) => field !== 'id' && field !== 'localRef'),
+            reason: 'field_application_failed',
+            errors: [...applyResult.errors],
+          });
+          continue;
+        }
         return {
           success: false,
           error: `Field application failed for NPC '${assignedId}': ${applyResult.errors.join('; ')}`,
           errors: applyResult.errors,
         };
       }
+      workingState.npcs[assignedId] = candidateNpc;
       appliedSummary.push({
         targetId: assignedId,
         appliedFields: applyResult.appliedFields,
@@ -1107,6 +1127,18 @@ export class CommitCoordinator {
           });
         }
       }
+    }
+
+    if (
+      rejectedProposals.length > 0 &&
+      !appliedSummary.some((summary) => Array.isArray(summary.appliedFields) && summary.appliedFields.length > 0)
+    ) {
+      return {
+        success: false,
+        error: `Field application failed for NPC '${rejectedProposals[0].targetId}': ${rejectedProposals[0].errors.join('; ')}`,
+        errors: rejectedProposals.flatMap((item) => item.errors),
+        rejected: rejectedProposals,
+      };
     }
 
     // Consolidate field-scoped stale/locked outcomes before any C08 observation
@@ -1680,7 +1712,9 @@ export class CommitCoordinator {
       workingState.pendingReview = { entries: [] };
     }
     for (const entry of resolvedPendingEntries) {
-      workingState.pendingReview.entries.push(entry);
+      if (!rejectedTargetIds.has(entry.targetId)) {
+        workingState.pendingReview.entries.push(entry);
+      }
     }
 
     // 9. Compute nextRevision and update workingState before checkpoint creation (C10, C11)
@@ -1730,6 +1764,7 @@ export class CommitCoordinator {
       checkpointId: checkpoint.id,
       applied: appliedSummary,
       deferred: deferredProposals,
+      rejected: rejectedProposals,
       observationIds: persistedObservations.map((o) => o.id),
       assignedNpcs: idResolution.assignedNpcs,
       resolvedPendingReviewIds,

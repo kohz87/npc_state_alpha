@@ -582,6 +582,35 @@ test('Field Applier (Item 7): auto-generates stable collection IDs and resolves 
   assert.equal(npc.nonPlayerRelationships[0].targetRef, undefined);
 });
 
+test('S8 Field Applier: nonPlayerRelationships targetName resolves only against one unique canonical NPC', () => {
+  const alice = createDefaultNpcRecord('npc_alice', 'Alice');
+  const mira = createDefaultNpcRecord('npc_mira', 'Mira');
+  const canonicalNpcs = { npc_alice: alice, npc_mira: mira };
+
+  const resolved = applyFieldProposal(alice, 'nonPlayerRelationships', {
+    operation: 'add',
+    relationships: [{ targetName: 'Mira', relationship: 'older sister' }],
+  }, WRITERS.DEVELOPMENT, { canonicalNpcs });
+  assert.equal(resolved.applied, true, resolved.error);
+  assert.equal(alice.nonPlayerRelationships.length, 1);
+  assert.equal(alice.nonPlayerRelationships[0].targetId, 'npc_mira');
+  assert.equal(alice.nonPlayerRelationships[0].targetName, undefined);
+
+  const bob = createDefaultNpcRecord('npc_bob', 'Bob');
+  const mira2 = createDefaultNpcRecord('npc_mira_2', 'Mira');
+  const before = structuredClone(bob.nonPlayerRelationships);
+  const ambiguous = applyFieldProposal(bob, 'nonPlayerRelationships', {
+    operation: 'add',
+    relationships: [{ targetName: 'Mira', relationship: 'sister' }],
+  }, WRITERS.DEVELOPMENT, {
+    canonicalNpcs: { npc_bob: bob, npc_mira: mira, npc_mira_2: mira2 },
+  });
+  assert.equal(ambiguous.applied, false);
+  assert.equal(ambiguous.reason, 'ambiguous_target_name');
+  assert.match(ambiguous.error, /use stable targetId/);
+  assert.deepEqual(bob.nonPlayerRelationships, before);
+});
+
 test('Field Applier (Item 1): normalizes personality wire metadata and strips wire-only facts metadata', () => {
   const npc = createDefaultNpcRecord('npc_1', 'Elena');
 

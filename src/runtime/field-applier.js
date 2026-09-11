@@ -339,6 +339,7 @@ function sanitizeCollectionItem(item) {
   delete clean.localFormRef;
   delete clean.localMemoryRef;
   delete clean.targetRef;
+  delete clean.targetName;
   return clean;
 }
 
@@ -536,6 +537,25 @@ function applyCollectionOperation(npc, fieldName, proposalValue, options = {}) {
                 applied: false,
                 reason: 'unresolved_target_ref',
                 error: `Unresolved targetRef '${itemObj.targetRef}' in nonPlayerRelationships.`,
+              };
+            }
+          }
+          if (!itemObj.targetId && itemObj.targetName) {
+            const canonicalNpcs = options.canonicalNpcs && typeof options.canonicalNpcs === 'object'
+              ? Object.values(options.canonicalNpcs)
+              : [];
+            const matches = canonicalNpcs.filter((candidate) =>
+              candidate && typeof candidate.name === 'string' && candidate.name === itemObj.targetName
+            );
+            if (matches.length === 1) {
+              itemObj.targetId = matches[0].id;
+            } else {
+              return {
+                applied: false,
+                reason: matches.length === 0 ? 'unresolved_target_name' : 'ambiguous_target_name',
+                error: matches.length === 0
+                  ? `Unresolved targetName '${itemObj.targetName}' in nonPlayerRelationships.`
+                  : `Ambiguous targetName '${itemObj.targetName}' in nonPlayerRelationships; use stable targetId.`,
               };
             }
           }

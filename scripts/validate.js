@@ -1,5 +1,5 @@
 /**
- * NPC State Alpha — S7 Repository Validation Script
+ * NPC State Alpha — S8 Repository Validation Script
  *
  * Verifies:
  * - Module imports and dependency reachability
@@ -10,6 +10,7 @@
  * - S5 practical UI, user commands, relationship mechanics, and C14 ownership gate
  * - S6 checkpoint metadata, history reconstruction, delayed-work reconciliation, native portability, and reload hooks
  * - S7 prompt/context measurement, selective projection, wire guidance, and provider independence
+ * - S8 behavioral matrix, partial-acceptance isolation, graph endpoint safety, and model-evidence replay
  */
 
 import fs from 'node:fs';
@@ -21,7 +22,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 async function runValidation() {
-  console.log('--- NPC State Alpha: S7 Repository Validation ---');
+  console.log('--- NPC State Alpha: S8 Repository Validation ---');
   let errors = 0;
 
   function fail(msg) {
@@ -646,7 +647,62 @@ async function runValidation() {
     pass('S7 canonical runtime contains no hardcoded Gemini 3.7/3.8 benchmark identifier.');
   }
 
-  console.log(`--- S7 Validation finished with ${errors} error(s) ---`);
+  // 11. S8 broad behavioral and integration validation surface.
+  const requiredS8Files = [
+    'tests/fixtures/s8-behavior-matrix.js',
+    'tests/s8-commit-isolation.test.js',
+    'tests/s8-integration-matrix.test.js',
+    'tests/s8-model-evidence.test.js',
+  ];
+  const missingS8Files = requiredS8Files.filter((relativePath) => !fs.existsSync(path.join(rootDir, relativePath)));
+  if (missingS8Files.length > 0) {
+    fail(`S8 behavioral matrix artifacts are missing: ${missingS8Files.join(', ')}`);
+  } else {
+    pass('S8 behavioral matrix, commit-isolation, integration, and model-evidence artifacts verified.');
+  }
+
+  try {
+    const s8Matrix = await import('../tests/fixtures/s8-behavior-matrix.js');
+    const scenarios = s8Matrix.S8_BEHAVIOR_MATRIX || [];
+    const groups = s8Matrix.S8_MATRIX_GROUPS || [];
+    const missingGroups = groups.filter((group) => !scenarios.some((scenario) => scenario.id?.startsWith(`S8-${group}`)));
+    const missingLongForm = Array.from({ length: 8 }, (_, index) => `S8-LF${String(index + 1).padStart(2, '0')}`)
+      .filter((id) => !scenarios.some((scenario) => scenario.id === id));
+    if (groups.join('') !== 'ABCDEFGHIJKLMNOP' || missingGroups.length > 0 || missingLongForm.length > 0) {
+      fail(`S8 behavioral matrix coverage is incomplete (groups=${missingGroups.join(',') || 'none'}, longform=${missingLongForm.join(',') || 'none'}).`);
+    } else {
+      pass('S8 behavioral matrix covers every A-P group plus eight long-form integration scenarios.');
+    }
+  } catch (err) {
+    fail(`S8 behavioral matrix fixture failed to import: ${err.message}`);
+  }
+
+  const coordinatorSource = fs.readFileSync(path.join(rootDir, 'src/runtime/commit-coordinator.js'), 'utf8');
+  if (!coordinatorSource.includes('const candidateNpc = cloneState(npc)') ||
+      !coordinatorSource.includes('rejectedTargetIds.add(assignedId)') ||
+      !coordinatorSource.includes('rejected: rejectedProposals')) {
+    fail('S8 independent existing-target rejection isolation is missing from CommitCoordinator.');
+  } else {
+    pass('S8 CommitCoordinator independent existing-target rejection isolation verified.');
+  }
+
+  const fieldApplierSource = fs.readFileSync(path.join(rootDir, 'src/runtime/field-applier.js'), 'utf8');
+  if (!fieldApplierSource.includes('itemObj.targetName') ||
+      !fieldApplierSource.includes('Ambiguous targetName') ||
+      !fieldApplierSource.includes('itemObj.targetId = matches[0].id')) {
+    fail('S8 non-player relationship targetName resolution/fail-closed ambiguity handling is missing.');
+  } else {
+    pass('S8 non-player relationship targetName resolution and ambiguity safety verified.');
+  }
+
+  const adapterSource = fs.readFileSync(path.join(rootDir, 'src/host/sillytavern-adapter.js'), 'utf8');
+  if (!adapterSource.includes('rejected: commitResult.rejected || []')) {
+    fail('S8 host diagnostics do not surface partial One-Pass target rejection.');
+  } else {
+    pass('S8 host commit diagnostics surface partial target rejection.');
+  }
+
+  console.log(`--- S8 Validation finished with ${errors} error(s) ---`);
   return errors === 0 ? 0 : 1;
 }
 

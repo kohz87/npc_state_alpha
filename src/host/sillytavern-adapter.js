@@ -1290,6 +1290,7 @@ export class SillyTavernAdapter {
             type: DIAGNOSTIC_EVENT_TYPES.COMMIT_SUCCESS,
             commitRevision: commitResult.commitRevision,
             assignedNpcs: commitResult.assignedNpcs,
+            rejected: commitResult.rejected || [],
           });
         }
         // Never await background Development work on the foreground roleplay path.
