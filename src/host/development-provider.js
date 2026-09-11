@@ -99,7 +99,12 @@ export class SillyTavernDevelopmentProvider {
     try {
       selectedProfile = service.getProfile(profileId.trim());
     } catch (error) {
-      throw new DevelopmentProviderError('Selected Development connection profile no longer exists.', 'development_profile_missing', { cause: error });
+      const hostMessage = error?.message || 'Profile not found';
+      throw new DevelopmentProviderError(
+        `Selected Development connection profile no longer exists. ${hostMessage}`,
+        'development_profile_missing',
+        { cause: error },
+      );
     }
     if (!selectedProfile) {
       throw new DevelopmentProviderError('Selected Development connection profile no longer exists.', 'development_profile_missing');
