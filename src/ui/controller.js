@@ -40,6 +40,15 @@ export class UIController {
     });
     this.settingsView = new SettingsView({
       getContext: () => this.adapter?.getContext?.(),
+      getConnectionProfiles: async () => {
+        const provider = this.developmentQueue?.provider;
+        if (typeof provider?.listSupportedProfiles === 'function') return provider.listSupportedProfiles();
+        return {
+          available: false,
+          profiles: [],
+          error: 'Development Connection Profile provider is unavailable.',
+        };
+      },
       onSaved: (settings) => {
         this.adapter?.applyRuntimeSettings?.(settings);
         this.showStatus('Settings saved.', 'success');
@@ -267,7 +276,7 @@ export class UIController {
     this.rootElement.innerHTML = `
       <section class="alpha-extension-panel" role="region" aria-label="NPC State Alpha">
         <div class="alpha-top-bar">
-          <div class="alpha-brand-section"><strong>NPC State Alpha</strong><span class="alpha-dev-status">${hasChat ? 'Development: ' : ''}${escapeHtml(devLabel)}</span></div>
+          <div class="alpha-brand-section"><div class="alpha-brand-copy"><span class="alpha-kicker">NPC DOSSIER</span><strong>NPC State Alpha</strong></div><span class="alpha-dev-status">${hasChat ? 'Development: ' : ''}${escapeHtml(devLabel)}</span></div>
           <button type="button" class="alpha-btn alpha-close" aria-label="Close NPC State Alpha">Close</button>
         </div>
         <div class="alpha-toolbar">

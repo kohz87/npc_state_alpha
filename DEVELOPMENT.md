@@ -34,7 +34,7 @@
 
 ## Commands, Namespace & Version Decisions
 
-* **Package Version:** `0.1.2` declared in `package.json` (ES Module, Node >= 22.0.0, zero external runtime dependencies).
+* **Package Version:** `0.1.3` declared in `package.json` (ES Module, Node >= 22.0.0, zero external runtime dependencies).
 * **Runtime Namespace:** `npc_state_alpha.v1`
 * **Storage Schema Version:** `1` (integer)
 * **One-Pass Wire Version:** `1` (string)
@@ -42,7 +42,7 @@
 * **Test / Validation Commands:**
   * `npm test` — Executes the deterministic test runner using Node built-in `node --test tests/**/*.test.js`.
   * `npm run validate` — Executes `node scripts/validate.js` verifying module imports, C02 coverage, wire/settings versions, production examples, S2 runtime primitives, S3 host primitives, S4 Development primitives/settings, S5 UI/user commands/relationship mechanics/C14 owner gate, and S6 history/recovery plus Alpha-native portability/import-baseline primitives.
-  * `npm run package` — Executes `node scripts/package.js`, creating the browser runtime distribution in `dist/` plus deterministic `release/npc_state_alpha-0.1.2.zip` and SHA-256 sidecar without dev/test/doc/private files.
+  * `npm run package` — Executes `node scripts/package.js`, creating the browser runtime distribution in `dist/` plus deterministic `release/npc_state_alpha-0.1.3.zip` and SHA-256 sidecar without dev/test/doc/private files.
   * `npm run measure:prompts` — Executes the accepted S7 deterministic prompt-size/hash corpus.
   * `npm run measure:performance` — Executes the S9 deterministic local performance/endurance characterization harness with small/medium/large/stress tiers and integrated session coverage.
   * `git diff --check` — Required final whitespace gate.

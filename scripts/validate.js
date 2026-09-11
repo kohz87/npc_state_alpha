@@ -140,25 +140,25 @@ async function runValidation() {
 
   // Verify provenance validation helper
   if (typeof contract.validateOwnedSourceRecord !== 'function') {
-    fail('validateOwnedSourceRecord function is missing from exports.');
+    fail('validateOwnedSourceRecord provenance function is missing from exports.');
   } else {
     pass('validateOwnedSourceRecord provenance function verified.');
   }
 
   // 4. Verify version consistency
-  if (pkg.version !== '0.1.2') {
-    fail(`package.json version expected '0.1.2', got '${pkg.version}'`);
+  if (pkg.version !== '0.1.3') {
+    fail(`package.json version expected '0.1.3', got '${pkg.version}'`);
   } else {
-    pass("package.json version is '0.1.2'");
+    pass("package.json version is '0.1.3'");
   }
 
   const devMdPath = path.join(rootDir, 'DEVELOPMENT.md');
   if (fs.existsSync(devMdPath)) {
     const devMd = fs.readFileSync(devMdPath, 'utf8');
-    if (!devMd.includes('0.1.2')) {
-      fail("DEVELOPMENT.md does not document package version '0.1.2'");
+    if (!devMd.includes('0.1.3')) {
+      fail("DEVELOPMENT.md does not document package version '0.1.3'");
     } else {
-      pass("DEVELOPMENT.md version aligns with package.json ('0.1.2').");
+      pass("DEVELOPMENT.md version aligns with package.json ('0.1.3').");
     }
   }
 
@@ -767,12 +767,12 @@ async function runValidation() {
 
   // 13. S10 release / compatibility / CI surface.
   const releaseManifest = JSON.parse(fs.readFileSync(path.join(rootDir, 'manifest.json'), 'utf8'));
-  if (pkg.version !== '0.1.2' || releaseManifest.version !== pkg.version) {
+  if (pkg.version !== '0.1.3' || releaseManifest.version !== pkg.version) {
     fail(`S10 release version mismatch: package=${pkg.version}, manifest=${releaseManifest.version}.`);
   } else if (runtime.ALPHA_SCHEMA_VERSION !== 1 || runtime.ALPHA_NATIVE_BUNDLE_VERSION !== 1) {
     fail('S10 application release must not silently bump canonical state/native format versions.');
   } else {
-    pass('S10 application version 0.1.2 is aligned while canonical state/native format remain version 1.');
+    pass('S10 application version 0.1.3 is aligned while canonical state/native format remain version 1.');
   }
 
   const releasePackageSource = fs.readFileSync(packageScriptPath, 'utf8');

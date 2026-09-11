@@ -39,6 +39,13 @@ function unique(values) {
   return [...new Set(values)];
 }
 
+function sameStringSet(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  const a = unique(left.map((value) => String(value).split('.')[0])).sort();
+  const b = unique(right.map((value) => String(value).split('.')[0])).sort();
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -434,14 +441,30 @@ export class DevelopmentReviewQueue {
     const candidates = [];
     for (const entry of state?.pendingReview?.entries || []) {
       if (entry.targetId === targetId && Array.isArray(entry.sourceScope) && entry.sourceScope.length > 0) {
-        candidates.push({ kind: 'pending', sourceScope: entry.sourceScope, exchangeId: entry.exchangeId || null, metadata: entry.metadata || {} });
+        candidates.push({
+          kind: 'pending',
+          pendingEntryId: entry.id || null,
+          pendingFieldSubset: Array.isArray(entry.fieldSubset) ? [...entry.fieldSubset] : null,
+          pendingOperation: entry.metadata?.operation || null,
+          sourceScope: entry.sourceScope,
+          exchangeId: entry.exchangeId || null,
+          metadata: entry.metadata || {},
+        });
       }
     }
     const receipts = state?.npcs?.[targetId]?.development?.reviewReceipts || [];
     for (let i = receipts.length - 1; i >= 0; i--) {
       const receipt = receipts[i];
       if (Array.isArray(receipt.sourceScope) && receipt.sourceScope.length > 0) {
-        candidates.push({ kind: 'receipt', sourceScope: receipt.sourceScope, exchangeId: null, metadata: {} });
+        candidates.push({
+          kind: 'receipt',
+          pendingEntryId: null,
+          pendingFieldSubset: null,
+          pendingOperation: null,
+          sourceScope: receipt.sourceScope,
+          exchangeId: null,
+          metadata: {},
+        });
       }
     }
 
@@ -486,6 +509,9 @@ export class DevelopmentReviewQueue {
       return {
         sourceScope: [...candidate.sourceScope],
         exchangeId: candidate.exchangeId || `${chatId}:${assistantPosition}`,
+        pendingEntryId: candidate.pendingEntryId || null,
+        pendingFieldSubset: candidate.pendingFieldSubset,
+        pendingOperation: candidate.pendingOperation,
         metadata: {
           ...candidate.metadata,
           userPosition,
@@ -500,13 +526,21 @@ export class DevelopmentReviewQueue {
 
     // Never guess relevance from the latest exchange. Manual audit operations may
     // reconsider only evidence already owned by this target.
-    return { sourceScope: [], exchangeId: null, metadata: {} };
+    return {
+      sourceScope: [],
+      exchangeId: null,
+      pendingEntryId: null,
+      pendingFieldSubset: null,
+      pendingOperation: null,
+      metadata: {},
+    };
   }
 
   /**
    * Rechecks missing durable details for an NPC (C12 RECHECK_MISSING operation).
    * Identifies blank durable fields defined in OPERATION_MASKS[RECHECK_MISSING],
-   * enqueues a restricted review entry, and records field-level audit outcomes.
+   * reuses an already-owned pending exchange when possible, and records field-level
+   * audit outcomes without duplicating or draining the original broad backlog.
    * @param {string} targetId Target NPC ID
    * @param {object} [options]
    * @returns {Promise<object>}
@@ -566,35 +600,72 @@ export class DevelopmentReviewQueue {
       return { success: false, status: 'chat_unavailable', error: 'Active chat is unavailable.' };
     }
 
-    const { sourceScope, exchangeId, metadata } = this._resolveAuditSourceScope(ctx.chat, chatId, targetId, loaded.state);
+    const scope = this._resolveAuditSourceScope(ctx.chat, chatId, targetId, loaded.state);
+    const {
+      sourceScope,
+      exchangeId,
+      pendingEntryId,
+      pendingFieldSubset,
+      pendingOperation,
+      metadata,
+    } = scope;
     if (!sourceScope.length) {
       return { success: false, status: 'source_unavailable', error: 'No usable chat source found for recheck.' };
     }
 
-    const entryId = `recheck_${chatId}_${targetId}_${Date.now()}`;
-    const pendingEntry = {
-      id: entryId,
-      targetId,
-      sourceScope,
-      exchangeId,
-      reason: 'recheck_missing',
-      fieldSubset: missingFields,
-      createdAt: nowIso(),
-      metadata: {
-        operation: AUDIT_OPERATIONS.RECHECK_MISSING,
-        ...metadata,
-      },
-    };
+    let entryId = pendingEntryId;
+    let preservePendingIds = [];
+    const reusableAuditEntry = Boolean(
+      pendingEntryId
+      && pendingOperation === AUDIT_OPERATIONS.RECHECK_MISSING
+      && sameStringSet(pendingFieldSubset, missingFields)
+    );
 
-    const enqueueResult = await this.coordinator.commit({
-      writer: WRITERS.RUNTIME,
-      pendingReviewEntries: [pendingEntry],
-    });
-    if (!enqueueResult.success) {
-      return { success: false, status: 'enqueue_failed', error: enqueueResult.error };
+    if (!entryId) {
+      entryId = `recheck_${chatId}_${targetId}_${Date.now()}`;
+      const pendingEntry = {
+        id: entryId,
+        targetId,
+        sourceScope,
+        exchangeId,
+        reason: 'recheck_missing',
+        fieldSubset: missingFields,
+        createdAt: nowIso(),
+        metadata: {
+          ...metadata,
+          operation: AUDIT_OPERATIONS.RECHECK_MISSING,
+        },
+      };
+
+      const enqueueResult = await this.coordinator.commit({
+        writer: WRITERS.RUNTIME,
+        pendingReviewEntries: [pendingEntry],
+      });
+      if (!enqueueResult.success) {
+        return { success: false, status: 'enqueue_failed', error: enqueueResult.error };
+      }
+    } else if (!reusableAuditEntry) {
+      // The source is already pending for a broader/different review. Use that row
+      // as provenance only. The one-shot audit must neither resolve nor poison it.
+      preservePendingIds = [entryId];
     }
 
-    const reviewResult = await this.trigger('recheck_missing', { manual: true, ...options });
+    const reviewResult = await this.trigger('recheck_missing', {
+      ...options,
+      manual: true,
+      entryIds: [entryId],
+      preservePendingIds,
+      entryOverrides: {
+        [entryId]: {
+          reason: 'recheck_missing',
+          fieldSubset: missingFields,
+          metadata: {
+            ...metadata,
+            operation: AUDIT_OPERATIONS.RECHECK_MISSING,
+          },
+        },
+      },
+    });
 
     const afterLoad = await this.storage.load();
     const updatedNpc = afterLoad.state?.npcs?.[targetId] || {};
@@ -658,35 +729,70 @@ export class DevelopmentReviewQueue {
       return { success: false, status: 'chat_unavailable', error: 'Active chat is unavailable.' };
     }
 
-    const { sourceScope, exchangeId, metadata } = this._resolveAuditSourceScope(ctx.chat, chatId, targetId, loaded.state);
+    const scope = this._resolveAuditSourceScope(ctx.chat, chatId, targetId, loaded.state);
+    const {
+      sourceScope,
+      exchangeId,
+      pendingEntryId,
+      pendingFieldSubset,
+      pendingOperation,
+      metadata,
+    } = scope;
     if (!sourceScope.length) {
       return { success: false, status: 'source_unavailable', error: 'No usable chat source found for refresh.' };
     }
 
-    const entryId = `refresh_${chatId}_${targetId}_${Date.now()}`;
-    const pendingEntry = {
-      id: entryId,
-      targetId,
-      sourceScope,
-      exchangeId,
-      reason: 'refresh_dossier',
-      fieldSubset: [...refreshMask],
-      createdAt: nowIso(),
-      metadata: {
-        operation: AUDIT_OPERATIONS.REFRESH_DOSSIER,
-        ...metadata,
-      },
-    };
+    let entryId = pendingEntryId;
+    let preservePendingIds = [];
+    const reusableAuditEntry = Boolean(
+      pendingEntryId
+      && pendingOperation === AUDIT_OPERATIONS.REFRESH_DOSSIER
+      && sameStringSet(pendingFieldSubset, refreshMask)
+    );
 
-    const enqueueResult = await this.coordinator.commit({
-      writer: WRITERS.RUNTIME,
-      pendingReviewEntries: [pendingEntry],
-    });
-    if (!enqueueResult.success) {
-      return { success: false, status: 'enqueue_failed', error: enqueueResult.error };
+    if (!entryId) {
+      entryId = `refresh_${chatId}_${targetId}_${Date.now()}`;
+      const pendingEntry = {
+        id: entryId,
+        targetId,
+        sourceScope,
+        exchangeId,
+        reason: 'refresh_dossier',
+        fieldSubset: [...refreshMask],
+        createdAt: nowIso(),
+        metadata: {
+          ...metadata,
+          operation: AUDIT_OPERATIONS.REFRESH_DOSSIER,
+        },
+      };
+
+      const enqueueResult = await this.coordinator.commit({
+        writer: WRITERS.RUNTIME,
+        pendingReviewEntries: [pendingEntry],
+      });
+      if (!enqueueResult.success) {
+        return { success: false, status: 'enqueue_failed', error: enqueueResult.error };
+      }
+    } else if (!reusableAuditEntry) {
+      preservePendingIds = [entryId];
     }
 
-    const reviewResult = await this.trigger('refresh_dossier', { manual: true, ...options });
+    const reviewResult = await this.trigger('refresh_dossier', {
+      ...options,
+      manual: true,
+      entryIds: [entryId],
+      preservePendingIds,
+      entryOverrides: {
+        [entryId]: {
+          reason: 'refresh_dossier',
+          fieldSubset: [...refreshMask],
+          metadata: {
+            ...metadata,
+            operation: AUDIT_OPERATIONS.REFRESH_DOSSIER,
+          },
+        },
+      },
+    });
 
     const afterLoad = await this.storage.load();
     const updatedNpc = afterLoad.state?.npcs?.[targetId] || {};
@@ -746,6 +852,15 @@ export class DevelopmentReviewQueue {
       chatId,
       reason,
       manual,
+      entryIds: Array.isArray(options.entryIds)
+        ? unique(options.entryIds.filter((id) => typeof id === 'string' && id.trim() !== ''))
+        : [],
+      preservePendingIds: Array.isArray(options.preservePendingIds)
+        ? unique(options.preservePendingIds.filter((id) => typeof id === 'string' && id.trim() !== ''))
+        : [],
+      entryOverrides: options.entryOverrides && typeof options.entryOverrides === 'object'
+        ? options.entryOverrides
+        : null,
       controller: new AbortController(),
       yieldedForForeground: false,
       promise: null,
@@ -797,6 +912,13 @@ export class DevelopmentReviewQueue {
     });
   }
 
+  async _markJobPending(job, entries, status, details = {}) {
+    const preserved = new Set(job?.preservePendingIds || []);
+    const writableEntries = (entries || []).filter((entry) => !preserved.has(entry?.id));
+    if (writableEntries.length === 0) return { success: true };
+    return this._markPending(writableEntries, status, details);
+  }
+
   async _runJob(job) {
     const localStartedAt = monotonicNowMs();
     const settings = this.getSettings();
@@ -804,8 +926,36 @@ export class DevelopmentReviewQueue {
     if (this.storage.getChatId() !== job.chatId) return { status: 'chat_changed_before_dispatch' };
 
     const loaded = await this.storage.load();
-    const batch = selectDevelopmentBatch(loaded.state, settings, { manual: job.manual });
-    if (batch.length === 0) return { status: 'idle', pending: loaded.state.pendingReview.entries.length };
+    const scopedEntryIds = new Set(job.entryIds || []);
+    const selectionState = scopedEntryIds.size > 0
+      ? {
+          ...loaded.state,
+          pendingReview: {
+            ...loaded.state.pendingReview,
+            entries: (loaded.state.pendingReview?.entries || []).filter((entry) => scopedEntryIds.has(entry.id)),
+          },
+        }
+      : loaded.state;
+    let batch = selectDevelopmentBatch(selectionState, settings, { manual: job.manual });
+    if (scopedEntryIds.size > 0 && batch.length === 0) {
+      return { status: 'source_unavailable', error: 'Requested manual audit entry is no longer pending.' };
+    }
+    if (batch.length === 0) return { status: 'idle' };
+    if (job.entryOverrides) {
+      batch = batch.map((entry) => {
+        const override = job.entryOverrides[entry.id];
+        if (!override || typeof override !== 'object') return entry;
+        return {
+          ...entry,
+          reason: typeof override.reason === 'string' ? override.reason : entry.reason,
+          fieldSubset: Array.isArray(override.fieldSubset) ? [...override.fieldSubset] : entry.fieldSubset,
+          metadata: {
+            ...(entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : {}),
+            ...(override.metadata && typeof override.metadata === 'object' ? override.metadata : {}),
+          },
+        };
+      });
+    }
 
     if (this.provider.requiresConfiguredProfile !== false && !settings.developmentConnectionProfile) {
       this._record(DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_PAUSED, { chatId: job.chatId, reason: 'development_profile_required' });
@@ -825,13 +975,13 @@ export class DevelopmentReviewQueue {
       settings,
     });
     if (!dispatch.valid) {
-      await this._markPending(batch, 'unavailable', { lastFailureCode: dispatch.errorCode || 'dispatch_context_invalid' }).catch(() => {});
+      await this._markJobPending(job, batch, 'unavailable', { lastFailureCode: dispatch.errorCode || 'dispatch_context_invalid' }).catch(() => {});
       return { status: 'source_unavailable', error: dispatch.error };
     }
 
     const unavailable = dispatch.unavailableEntries.map((item) => item.entry);
     if (unavailable.length > 0) {
-      await this._markPending(unavailable, 'unavailable', { lastFailureCode: 'owned_source_unavailable_or_changed' }).catch(() => {});
+      await this._markJobPending(job, unavailable, 'unavailable', { lastFailureCode: 'owned_source_unavailable_or_changed' }).catch(() => {});
     }
     if (dispatch.entries.length === 0) {
       return { status: 'source_unavailable', unavailable: unavailable.length };
@@ -864,7 +1014,7 @@ export class DevelopmentReviewQueue {
       if (job.controller.signal.aborted || error?.code === 'development_aborted' || error?.name === 'AbortError') {
         return { status: 'aborted', reason: job.yieldedForForeground ? 'foreground_priority' : 'cancelled' };
       }
-      await this._markPending(dispatch.entries, 'failed', { lastFailureCode: error?.code || 'development_provider_failed' }).catch(() => {});
+      await this._markJobPending(job, dispatch.entries, 'failed', { lastFailureCode: error?.code || 'development_provider_failed' }).catch(() => {});
       this._record(DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_FAILED, {
         chatId: job.chatId,
         reason: error?.code || 'development_provider_failed',
@@ -880,18 +1030,18 @@ export class DevelopmentReviewQueue {
 
     const parsed = parseDevelopmentResponse(providerResult?.text);
     if (!parsed.success) {
-      await this._markPending(dispatch.entries, 'failed', { lastFailureCode: parsed.errorCode || 'development_parse_failed' }).catch(() => {});
+      await this._markJobPending(job, dispatch.entries, 'failed', { lastFailureCode: parsed.errorCode || 'development_parse_failed' }).catch(() => {});
       this._record(DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_FAILED, { chatId: job.chatId, reason: parsed.errorCode || 'development_parse_failed' });
       return { status: 'malformed_response', errorCode: parsed.errorCode };
     }
     const validated = validateDevelopmentEnvelope(parsed.payload);
     if (!validated.valid) {
-      await this._markPending(dispatch.entries, 'failed', { lastFailureCode: 'development_schema_invalid' }).catch(() => {});
+      await this._markJobPending(job, dispatch.entries, 'failed', { lastFailureCode: 'development_schema_invalid' }).catch(() => {});
       return { status: 'invalid_response', errors: validated.errors };
     }
     const scoped = validateDevelopmentResponseScope(parsed.payload, dispatch);
     if (!scoped.valid) {
-      await this._markPending(dispatch.entries, 'failed', { lastFailureCode: 'development_scope_invalid' }).catch(() => {});
+      await this._markJobPending(job, dispatch.entries, 'failed', { lastFailureCode: 'development_scope_invalid' }).catch(() => {});
       return { status: 'invalid_response_scope', errors: scoped.errors };
     }
 
@@ -926,7 +1076,7 @@ export class DevelopmentReviewQueue {
     if (!lateSourceContext.valid || lateUnavailableMap.size > 0 || lateSourceContext.usableEntries.length !== dispatch.entries.length) {
       const lateUnavailable = [...lateUnavailableMap.values()];
       if (lateUnavailable.length > 0) {
-        await this._markPending(lateUnavailable, 'unavailable', { lastFailureCode: 'late_source_unavailable' }).catch(() => {});
+        await this._markJobPending(job, lateUnavailable, 'unavailable', { lastFailureCode: 'late_source_unavailable' }).catch(() => {});
       }
       const unaffectedPending = dispatch.entries.length - lateUnavailable.length;
       if (unaffectedPending > 0) {
@@ -942,11 +1092,14 @@ export class DevelopmentReviewQueue {
     }
 
     const dependencyMaps = deriveDevelopmentReadDependencies(dispatch.revisionSnapshot, parsed.payload);
-    const pendingReviewResolutions = dispatch.entries.map((entry) => ({
-      id: entry.id,
-      targetId: entry.targetId,
-      sourceScope: [...entry.sourceScope],
-    }));
+    const preservedPendingIds = new Set(job.preservePendingIds || []);
+    const pendingReviewResolutions = dispatch.entries
+      .filter((entry) => !preservedPendingIds.has(entry.id))
+      .map((entry) => ({
+        id: entry.id,
+        targetId: entry.targetId,
+        sourceScope: [...entry.sourceScope],
+      }));
 
     const commitStartedAt = monotonicNowMs();
     const commitResult = await this.coordinator.commitValidatedEnvelope({
@@ -964,7 +1117,7 @@ export class DevelopmentReviewQueue {
     });
 
     if (!commitResult.success) {
-      await this._markPending(dispatch.entries, 'failed', { lastFailureCode: commitResult.errorCode || 'development_commit_failed' }).catch(() => {});
+      await this._markJobPending(job, dispatch.entries, 'failed', { lastFailureCode: commitResult.errorCode || 'development_commit_failed' }).catch(() => {});
       this._record(DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_FAILED, { chatId: job.chatId, reason: commitResult.errorCode || 'development_commit_failed' });
       return { status: 'commit_failed', commitResult };
     }
@@ -982,11 +1135,11 @@ export class DevelopmentReviewQueue {
       sourceCount: dispatch.exchangeContext?.sources?.size || 0,
     });
 
-    // A successful batch may leave an eligible backlog because C09 caps each
-    // provider request at six exchanges. Detect more eligible work from the
-    // latest durable state and coalesce one bounded follow-up. Failed/deferred
-    // work remains blocked by selectDevelopmentBatch and cannot tight-loop.
-    if ((commitResult.resolvedPendingReviewIds?.length || 0) > 0 && this.storage.getChatId() === job.chatId && !job.controller.signal.aborted) {
+    // A successful ordinary batch may leave an eligible backlog because C09 caps
+    // each provider request at six exchanges. A scoped manual audit is deliberately
+    // one-shot and must not turn into Review Pending after it finishes.
+    const scopedManualAudit = (job.entryIds || []).length > 0;
+    if (!scopedManualAudit && (commitResult.resolvedPendingReviewIds?.length || 0) > 0 && this.storage.getChatId() === job.chatId && !job.controller.signal.aborted) {
       try {
         const latest = await this.storage.load();
         const nextBatch = selectDevelopmentBatch(latest.state, settings, { manual: job.manual });
