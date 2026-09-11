@@ -23,9 +23,9 @@ function noOpResponse(prompt) {
     version: '1',
     reviewReceipts: targets.map((target) => ({
       targetId: target.id,
-      sourceScope: target.requiredSourceScope,
+      sourceScope: target.sourceScope,
       status: 'reviewed_no_proposals',
-      ...(target.restricted ? { restricted: true, fieldSubset: target.requiredFieldSubset } : {}),
+      ...(Array.isArray(target.fieldSubset) ? { restricted: true, fieldSubset: target.fieldSubset } : {}),
     })),
     proposals: [],
     observations: [],
@@ -199,8 +199,7 @@ test('Development Controls: Refresh Dossier uses restricted canonical C12 mask a
   const result = await queue.refreshDossier('alice');
   assert.equal(result.targetId, 'alice');
   assert.equal(result.operation, AUDIT_OPERATIONS.REFRESH_DOSSIER);
-  assert.equal(inspectedTarget.restricted, true);
-  assert.deepEqual(new Set(inspectedTarget.requiredFieldSubset), new Set(OPERATION_MASKS[AUDIT_OPERATIONS.REFRESH_DOSSIER]));
+  assert.deepEqual(new Set(inspectedTarget.fieldSubset), new Set(OPERATION_MASKS[AUDIT_OPERATIONS.REFRESH_DOSSIER]));
   assert.equal(result.fieldOutcomes.length, OPERATION_MASKS[AUDIT_OPERATIONS.REFRESH_DOSSIER].length);
   const speechOutcome = result.fieldOutcomes.find((outcome) => outcome.field === 'speech');
   assert.equal(speechOutcome.outcome, 'unchanged');

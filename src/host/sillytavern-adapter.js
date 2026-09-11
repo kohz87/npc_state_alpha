@@ -760,7 +760,11 @@ export class SillyTavernAdapter {
       // its result will be rejected from Alpha mutation until recovery.
       const promptText = PromptInjector.buildExtensionPrompt(
         this.inFlightRequest.branchUnsafe ? null : state,
-        { admissionPolicy: this.coordinator.admissionPolicy }
+        {
+          admissionPolicy: this.coordinator.admissionPolicy,
+          routineDossierDetailBudget: runtimeSettings.routineDossierDetailBudget,
+          currentUserText: userText,
+        }
       );
 
       // 7. Inject via setExtensionPrompt if available

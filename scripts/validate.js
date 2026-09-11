@@ -1,5 +1,5 @@
 /**
- * NPC State Alpha — S6 Repository Validation Script
+ * NPC State Alpha — S7 Repository Validation Script
  *
  * Verifies:
  * - Module imports and dependency reachability
@@ -9,6 +9,7 @@
  * - Accepted S4 Development settings/queue/provider/context integration
  * - S5 practical UI, user commands, relationship mechanics, and C14 ownership gate
  * - S6 checkpoint metadata, history reconstruction, delayed-work reconciliation, native portability, and reload hooks
+ * - S7 prompt/context measurement, selective projection, wire guidance, and provider independence
  */
 
 import fs from 'node:fs';
@@ -20,7 +21,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 async function runValidation() {
-  console.log('--- NPC State Alpha: S6 Repository Validation ---');
+  console.log('--- NPC State Alpha: S7 Repository Validation ---');
   let errors = 0;
 
   function fail(msg) {
@@ -558,7 +559,94 @@ async function runValidation() {
     pass('S6 canonical history recovery module exists.');
   }
 
-  console.log(`--- S6 Validation finished with ${errors} error(s) ---`);
+  // 10. S7 prompt/context optimization surface.
+  if (pkg.scripts?.['measure:prompts'] !== 'node scripts/measure-prompts.js' ||
+      !fs.existsSync(path.join(rootDir, 'scripts/measure-prompts.js'))) {
+    fail('S7 deterministic prompt measurement command/script is missing.');
+  } else {
+    pass('S7 deterministic prompt measurement command verified.');
+  }
+
+  if (
+    typeof host.PromptInjector?.buildContinuityProjection !== 'function' ||
+    typeof host.PromptInjector?.buildImmediateOutputContract !== 'function' ||
+    typeof host.PromptInjector?.buildExtensionPrompt !== 'function'
+  ) {
+    fail('S7 Immediate prompt builder surface is incomplete.');
+  } else {
+    pass('S7 Immediate selective-context prompt builder surface verified.');
+  }
+
+  const immediateContract = host.PromptInjector.buildImmediateOutputContract({ admissionPolicy: 'named_preferred' });
+  if (
+    !immediateContract.includes('Omit unsupported or unchanged fields') ||
+    !immediateContract.includes('direct proposal scalars') ||
+    !immediateContract.includes('Axis numbers occur only inside axes') ||
+    !immediateContract.includes('Development-owned dossier fields are read-only')
+  ) {
+    fail('S7 Immediate compact contract is missing required omission/wire/authority guidance.');
+  } else {
+    pass('S7 Immediate compact omission/wire/authority guidance verified.');
+  }
+
+  const devPrompt = host.buildDevelopmentPrompt({
+    targets: [{
+      id: 'npc_validate_s7',
+      name: 'Validation NPC',
+      current: { personality: { traits: ['Reserved'] } },
+      relationshipAxesReadOnly: { trust: 0, affection: 0, desire: 0, tension: 0 },
+      currentFormReadOnly: null,
+      locks: [],
+      observations: [],
+      acceptedSupport: [],
+    }],
+    targetSourceScope: { npc_validate_s7: ['chat:validate:1'] },
+    targetFieldSubset: { npc_validate_s7: null },
+    sources: [{ sourceRef: 'chat:validate:1', role: 'assistant', text: 'Validation NPC answers quietly.' }],
+  });
+  if (
+    devPrompt.includes('Response allowance requested by host') ||
+    devPrompt.includes('requiredSourceScope') ||
+    !devPrompt.includes('sourceRef') ||
+    !devPrompt.includes('reviewed_no_proposals') ||
+    !devPrompt.includes('never {field,value}')
+  ) {
+    fail('S7 Development prompt compactness/wire guidance is inconsistent.');
+  } else {
+    pass('S7 Development compact context and explicit wire guidance verified.');
+  }
+
+  if (
+    !Object.prototype.hasOwnProperty.call(contract.ALPHA_SETTINGS_DEFAULTS, 'developmentConnectionProfile') ||
+    typeof host.SillyTavernDevelopmentProvider?.prototype?.inspectConfiguredProfile !== 'function'
+  ) {
+    fail('S7 Development profile/model selection abstraction is missing.');
+  } else {
+    const provider = new host.SillyTavernDevelopmentProvider({ moduleLoader: async () => ({}) });
+    if (provider.requiresConfiguredProfile !== true) {
+      fail('S7 Development provider must still require an explicit independent profile.');
+    } else {
+      pass('S7 Development profile/model selection remains explicit and independent.');
+    }
+  }
+
+  const srcJsFiles = [];
+  const collectJs = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) collectJs(full);
+      else if (entry.isFile() && entry.name.endsWith('.js')) srcJsFiles.push(full);
+    }
+  };
+  collectJs(path.join(rootDir, 'src'));
+  const hardcodedGemini = srcJsFiles.find((file) => /gemini-3\.[78]/i.test(fs.readFileSync(file, 'utf8')));
+  if (hardcodedGemini) {
+    fail(`S7 benchmark Gemini model identifier leaked into canonical runtime: ${path.relative(rootDir, hardcodedGemini)}`);
+  } else {
+    pass('S7 canonical runtime contains no hardcoded Gemini 3.7/3.8 benchmark identifier.');
+  }
+
+  console.log(`--- S7 Validation finished with ${errors} error(s) ---`);
   return errors === 0 ? 0 : 1;
 }
 

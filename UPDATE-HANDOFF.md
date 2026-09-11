@@ -161,4 +161,24 @@ All current Alpha-native S6 acceptance requirements have now been exercised on t
 - No additional Gemini call was needed after `model_status` confirmed `gemini-3.8-flash-high` available. Existing read-only S6 Gemini fixtures remain the fractional relationship rollback and ambiguous empty-proposals cases plus the earlier two-NPC/review leads already reconciled deterministically.
 - No Opus, Codex, production Beta database/profile access, fabricated Beta fixture, push, merge, rebase or canonical-main mutation occurred. Legacy compatibility remains explicitly assigned to S10 and S7 has not started.
 
-Only the single normal local S6 commit remains. No S7 work is authorized after it.
+Historical note: the single S6 commit was subsequently created as `b8b23ac93af681e87bded7adf226dac1a0b0abdc`. The later user instruction explicitly authorized S7 in a fresh worktree.
+
+---
+
+## S7 prompt/context optimization handoff — 2026-09-11
+
+S7 is implemented in the isolated workspace `dbc4d0e7-s7-prompt-context`, branch `work/dbc4d0e7-s7-prompt-context`, directly from accepted S6 `b8b23ac93af681e87bded7adf226dac1a0b0abdc`. S8 has not begun.
+
+The S7 candidate keeps Alpha semantics/runtime ownership unchanged while consolidating the two model-facing paths. Immediate continuity now uses a deterministic soft-detail projection that keeps every identity visible and gives detailed context to present/active/exact-mentioned NPCs plus bounded importance/ID fill. Development sends source-visible durable comparison context once, limits retained observation/support prompt records to eight without pruning canonical state, projects only the four current relationship axes, and omits runtime mechanics/routing/empty metadata. Both prompt grammars remain model-independent and preserve the accepted C02/C03/C04/C08 authorities.
+
+Deterministic measurement baseline is the accepted S6 prompt builders frozen in `tests/fixtures/s7-prompt-baseline.js`. Final measured aggregate sizes are Immediate **23,181 → 16,073 chars (-7,108 / -30.66%)** and Development **18,767 → 19,053 chars (+286 / +1.52%)**. The Development increase is a bounded reliability tradeoff for explicit exact-wire guidance discovered by live model testing; the retained-context-heavy mature dossier still shrinks **6,931 → 6,447 chars (-484 / -6.98%)**. `npm run measure:prompts` records chars, UTF-8 bytes, SHA-256 and a stated ceil(chars/4) proxy.
+
+Authorized read-only Antigravity evaluation used exact models `gemini-3.8-flash-high` for the 8-case primary Immediate corpus and `gemini-3.7-flash-high` for the 8-case primary Development corpus, with 3 unique cross-model cases in each opposite direction. Focused repeats were limited to observed wire ambiguity. Across the interrupted/resumed S7 work there were 15 completed provider turns, 13 usable for evaluation; one first turn yielded no useful output after a denied tool attempt and one late 3.8 probe is excluded because the benchmark task itself omitted the required root schema line. Gemini never had write authority.
+
+Live failures were converted to deterministic regressions. The S6 Development guidance encouraged semantically plausible but wire-invalid `field/value`, `sourceId`, receipt-status and support-shape output from 3.7; the final compact grammar fixed those classes and the age/family case now uses string age plus `operation:"add"`/`targetName`. Cross-Immediate 3.7 initially emitted `{value,source}` wrappers and then invented `<field>Source` keys; shared model-independent clarification now yields direct scalars, one literal `source`, omitted empty aliases and canonical no-shift relationship evaluation. Gemini 3.8 final Immediate and cross-Development representative outputs are also pinned through production validators.
+
+Provider routing remains configurable: Immediate follows the user's SillyTavern roleplay connection; Development uses independent `developmentConnectionProfile`, and the chosen Connection Manager profile supplies its own provider/model. No Gemini 3.7/3.8 identifier is present in canonical runtime routing and no duplicate Alpha Development-model setting was added.
+
+Final pre-commit evidence: after the S7 documentation update, `npm test` **513/513 PASS**, `npm run validate` **57/57 PASS**, `npm run measure:prompts` PASS, `npm run package` PASS and `git diff --check` PASS with only normal LF→CRLF notices. Fresh S7 package installed only in the dedicated SillyTavern 1.18.0 host is **39 files / 796,979 bytes**. Real Edge installed-host smoke/UI acceptance passes with loader/import/adapter/interceptor/settings/UI healthy, zero Alpha console errors, zero uncaught page errors, and empty host stderr. Installed prompt injector, Development context and S6 history-recovery modules are served HTTP 200. Complete S6→S7 diff review found no accepted High/Medium/Low finding and no runtime authority migration.
+
+Only the single normal local S7 commit remains, with parent `b8b23ac93af681e87bded7adf226dac1a0b0abdc`. Verify the clean committed worktree and canonical main afterward, then STOP. Do not begin S8. No Opus/Codex/push/merge/rebase is authorized.

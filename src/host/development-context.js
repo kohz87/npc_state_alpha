@@ -26,6 +26,7 @@ import {
 } from './sillytavern-adapter.js';
 
 const BLOCKING_REVIEW_STATUSES = new Set(['failed', 'unavailable', 'deferred']);
+const DEVELOPMENT_CONTEXT_RECORD_LIMIT = 8;
 const EXTRA_DISPATCH_REVISION_FIELDS = Object.freeze([
   'relationshipEvaluation',
   'lifeState',
@@ -262,6 +263,16 @@ export function buildDevelopmentExchangeContext({ chat, chatId, entries, verifyP
   };
 }
 
+function relationshipAxesProjection(relationship) {
+  if (!relationship || typeof relationship !== 'object' || Array.isArray(relationship)) return undefined;
+  return {
+    trust: relationship.trust ?? 0,
+    affection: relationship.affection ?? 0,
+    desire: relationship.desire ?? 0,
+    tension: relationship.tension ?? 0,
+  };
+}
+
 function targetComparisonRecord(npc, fieldSubset = null, allowedSourceScope = null) {
   const restrictedFields = Array.isArray(fieldSubset) && fieldSubset.length > 0
     ? new Set(fieldSubset.map((field) => String(field).split('.')[0]))
@@ -284,7 +295,7 @@ function targetComparisonRecord(npc, fieldSubset = null, allowedSourceScope = nu
     ? npc.development.observations
         .filter((obs) => fieldAllowed(obs.field))
         .filter((obs) => !allowedSources || allowedSources.has(obs?.source?.sourceRef))
-        .slice(-12)
+        .slice(-DEVELOPMENT_CONTEXT_RECORD_LIMIT)
         .map((obs) => ({
           id: obs.id,
           field: obs.field,
@@ -293,10 +304,17 @@ function targetComparisonRecord(npc, fieldSubset = null, allowedSourceScope = nu
           source: obs.source,
         }))
     : [];
+  const visibleObservationIds = new Set(observations.map((observation) => observation.id));
   const acceptedSupport = Array.isArray(npc?.development?.acceptedSupport)
     ? npc.development.acceptedSupport
         .filter((support) => fieldAllowed(support.field))
-        .slice(-12)
+        .filter((support) => {
+          if (!allowedSources) return true;
+          const sourceVisible = Array.isArray(support.sourceRefs) && support.sourceRefs.some((sourceRef) => allowedSources.has(sourceRef));
+          const observationVisible = Array.isArray(support.supportingObservationIds) && support.supportingObservationIds.some((id) => visibleObservationIds.has(id));
+          return sourceVisible || observationVisible;
+        })
+        .slice(-DEVELOPMENT_CONTEXT_RECORD_LIMIT)
         .map((support) => ({
           field: support.field,
           fieldRevision: support.fieldRevision,
@@ -309,7 +327,9 @@ function targetComparisonRecord(npc, fieldSubset = null, allowedSourceScope = nu
     name: npc.name,
     lifeState: npc.lifeState,
     current,
-    relationshipAxesReadOnly: !restrictedFields || restrictedFields.has('relationshipDynamic') ? npc.relationship : undefined,
+    relationshipAxesReadOnly: !restrictedFields || restrictedFields.has('relationshipDynamic')
+      ? relationshipAxesProjection(npc.relationship)
+      : undefined,
     currentFormReadOnly: !restrictedFields || restrictedFields.has('canonicalAppearance') || restrictedFields.has('appearanceForms')
       ? npc.currentForm
       : undefined,
@@ -448,34 +468,47 @@ export function buildDevelopmentDispatch({ state, chat, chatId, entries, setting
  * Compact Development prompt. The complete durable-domain menu remains visible
  * so new facts are discoverable without keyword preclassification.
  */
-export function buildDevelopmentPrompt({ targets, targetSourceScope, targetFieldSubset = {}, sources, settings }) {
+export function buildDevelopmentPrompt({ targets, targetSourceScope, targetFieldSubset = {}, sources }) {
   const domainMenu = DURABLE_DOSSIER_FIELDS.join(', ');
   const targetPayload = targets.map((target) => {
+    const sourceScope = targetSourceScope[target.id] || [];
     const fieldSubset = Array.isArray(targetFieldSubset[target.id]) && targetFieldSubset[target.id].length > 0
       ? [...targetFieldSubset[target.id]]
       : null;
+    const observations = (target.observations || []).slice(-DEVELOPMENT_CONTEXT_RECORD_LIMIT);
+    const visibleObservationIds = new Set(observations.map((observation) => observation.id));
+    const visibleSources = new Set(sourceScope);
+    const acceptedSupport = (target.acceptedSupport || []).filter((support) => {
+      const sourceVisible = Array.isArray(support.sourceRefs) && support.sourceRefs.some((sourceRef) => visibleSources.has(sourceRef));
+      const observationVisible = Array.isArray(support.supportingObservationIds) && support.supportingObservationIds.some((id) => visibleObservationIds.has(id));
+      return sourceVisible || observationVisible;
+    }).slice(-DEVELOPMENT_CONTEXT_RECORD_LIMIT);
+    const relationshipAxesReadOnly = relationshipAxesProjection(target.relationshipAxesReadOnly);
     return {
-      ...target,
-      requiredSourceScope: targetSourceScope[target.id] || [],
-      restricted: Boolean(fieldSubset),
-      ...(fieldSubset ? { requiredFieldSubset: fieldSubset } : {}),
+      id: target.id,
+      name: target.name,
+      lifeState: target.lifeState,
+      current: target.current || {},
+      ...(relationshipAxesReadOnly !== undefined ? { relationshipAxesReadOnly } : {}),
+      ...(target.currentFormReadOnly !== undefined ? { currentFormReadOnly: target.currentFormReadOnly } : {}),
+      ...((target.locks || []).length > 0 ? { locks: target.locks } : {}),
+      ...(observations.length > 0 ? { observations } : {}),
+      ...(acceptedSupport.length > 0 ? { acceptedSupport } : {}),
+      sourceScope,
+      ...(fieldSubset ? { fieldSubset } : {}),
     };
   });
   return [
-    'You are NPC State Alpha Development Review. Return exactly one valid JSON object and no markdown/commentary.',
-    'Use only the supplied owned narrative sources as evidence. Exact excerpts must occur in the labeled source text.',
-    `Wire version: "1". Eligible durable domains: ${domainMenu}.`,
-    'Never write immediate-owned fields: name, aliases, identityKind, present, activeInExchange, offscreenActivity, mood, location, goal, status, currentPresentation, currentForm, relationshipEvaluation, lifeState.',
-    'For every supplied target, return one reviewReceipts entry whose targetId matches and whose sourceScope covers that target requiredSourceScope. Use status "reviewed_no_proposals" when no durable proposal is warranted.',
-    'If a target has restricted=true, review only its requiredFieldSubset and return restricted=true with a fieldSubset covering those fields. Never propose or observe another durable field for that restricted target.',
-    'Proposals may establish/refine only grounded durable values. First-contact explicit facts may be established directly. One-off or uncertain evidence should become observations instead of accepted traits.',
-    'Observations use localObservationRef, targetId, field, observation, source, and optional disposition. supportProposals may bind accepted fields to observation refs or supplied source refs in the same response.',
-    'Retained observation IDs are usable only when that observation is supplied in the target context with its original source also present in SOURCES; do not reference any other stored observation ID.',
-    'Do not invent evidence, IDs, missing family members, recurrence, or values merely to fill unknown fields. Omission preserves existing values.',
-    `Response allowance requested by host: ${settings.developmentResponseLimit} tokens.`,
+    'NPC State Alpha Development v1. Return one JSON object only; no markdown/commentary.',
+    'Evidence: cite only target.sourceScope from SOURCES as source={"sourceRef":"...","excerpt":"<verbatim substring>"}. Never use sourceId.',
+    `Write only durable fields: ${domainMenu}. Other fields + relationshipAxesReadOnly/currentFormReadOnly are read-only; never numerically score Trust/Affection/Desire/Tension.`,
+    'Durability: explicit durable facts may establish immediately. One-off/transient mood, reaction, sleep, gesture or action is not a permanent trait; observe only if useful. Explicit characterization or reinforced/repeated patterns may establish/refine. Contradictions qualify the affected value, not unrelated accepted detail. Omit unchanged/unsupported fields; omission preserves; never invent.',
+    'Receipt per target: {targetId,sourceScope,status}, status only "reviewed"|"reviewed_no_proposals". If target.fieldSubset exists, review only it and add restricted:true plus the same fieldSubset.',
+    'Proposal is {targetId,<facet>:...}, never {field,value}. Shapes: relationshipDynamic/canonicalAppearance/behavioralProfile/speech={value,source}; personality={traits:[...],source}; mannerisms={items:[...],source}; facts={role?,species?,background?,actualAge?,apparentAge?,birthday?,source} with string fact values. Collections: appearanceForms={operation,forms:[...]}; importantMemories={operation,memories:[...]}; nonPlayerRelationships={operation,relationships:[{targetId?|targetRef?|targetName?,relationship|relationKind|description,source}]}. New collection entries use add; replace/remove require the stable persisted formId/memoryId/relationId supplied in TARGET.',
+    'Observation={localObservationRef,targetId,field,observation,source[,disposition]}; disposition is an object, e.g. {"role":"tentative"}. supportProposals only if useful: {targetId,field,sourceRefs:[...],supportingObservationRefs:[...],supportingObservationIds:[...]}; never a source key. Refs point to observations created in this response; IDs point to supplied retained observations and require their original source in this request.',
     `TARGETS=${JSON.stringify(targetPayload)}`,
     `SOURCES=${JSON.stringify(sources)}`,
-    'RESPONSE_SHAPE={"version":"1","reviewReceipts":[],"proposals":[],"observations":[],"supportProposals":[]}',
+    'RESPONSE={"version":"1","reviewReceipts":[],"proposals":[],"observations":[],"supportProposals":[]}',
   ].join('\n');
 }
 

@@ -9,7 +9,8 @@
   "scripts": {
     "test": "node --test tests/**/*.test.js",
     "validate": "node scripts/validate.js",
-    "package": "node scripts/package.js"
+    "package": "node scripts/package.js",
+    "measure:prompts": "node scripts/measure-prompts.js"
   },
   "keywords": [
     "sillytavern",

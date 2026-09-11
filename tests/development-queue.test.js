@@ -92,9 +92,9 @@ function noOpResponse(prompt) {
     version: '1',
     reviewReceipts: targets.map((target) => ({
       targetId: target.id,
-      sourceScope: target.requiredSourceScope,
+      sourceScope: target.sourceScope,
       status: 'reviewed_no_proposals',
-      ...(target.restricted ? { restricted: true, fieldSubset: target.requiredFieldSubset } : {}),
+      ...(Array.isArray(target.fieldSubset) ? { restricted: true, fieldSubset: target.fieldSubset } : {}),
     })),
     proposals: [],
     observations: [],
@@ -112,7 +112,7 @@ function roleResponse(prompt, role = 'Senior Archivist', options = {}) {
     version: '1',
     reviewReceipts: targets.map((item) => ({
       targetId: item.id,
-      sourceScope: item.requiredSourceScope,
+      sourceScope: item.sourceScope,
       status: 'reviewed',
     })),
     proposals: [{
@@ -149,7 +149,7 @@ function observationOnlyResponse(prompt) {
     version: '1',
     reviewReceipts: targets.map((item) => ({
       targetId: item.id,
-      sourceScope: item.requiredSourceScope,
+      sourceScope: item.sourceScope,
       status: 'reviewed',
     })),
     proposals: [],
@@ -180,9 +180,9 @@ function tentativeRoleObservationResponse(prompt) {
     version: '1',
     reviewReceipts: targets.map((item) => ({
       targetId: item.id,
-      sourceScope: item.requiredSourceScope,
+      sourceScope: item.sourceScope,
       status: 'reviewed',
-      ...(item.restricted ? { restricted: true, fieldSubset: item.requiredFieldSubset } : {}),
+      ...(Array.isArray(item.fieldSubset) ? { restricted: true, fieldSubset: item.fieldSubset } : {}),
     })),
     proposals: [],
     observations: [{
@@ -208,9 +208,9 @@ function promoteRetainedRoleObservationResponse(prompt) {
     version: '1',
     reviewReceipts: targets.map((item) => ({
       targetId: item.id,
-      sourceScope: item.requiredSourceScope,
+      sourceScope: item.sourceScope,
       status: 'reviewed',
-      ...(item.restricted ? { restricted: true, fieldSubset: item.requiredFieldSubset } : {}),
+      ...(Array.isArray(item.fieldSubset) ? { restricted: true, fieldSubset: item.fieldSubset } : {}),
     })),
     proposals: [{
       targetId: target.id,
@@ -472,8 +472,7 @@ test('S4 Observation follow-up: tentative evidence narrows the original pending 
     const targets = targetsFromPrompt(prompt);
     const sources = sourcesFromPrompt(prompt);
     assert.equal(targets.length, 1);
-    assert.equal(targets[0].restricted, true);
-    assert.deepEqual(targets[0].requiredFieldSubset, ['role']);
+    assert.deepEqual(targets[0].fieldSubset, ['role']);
     assert.deepEqual(Object.keys(targets[0].current), []);
     assert.equal(targets[0].observations.length, 1);
     assert.equal(targets[0].observations[0].field, 'role');
@@ -536,8 +535,8 @@ test('S4 Queue: each request stays at six exchanges while successful backlog dra
   const result = await queue.trigger('batch');
   assert.equal(result.status, 'committed');
   assert.equal(provider.calls.length, 2);
-  assert.equal(targetsFromPrompt(provider.calls[0].prompt)[0].requiredSourceScope.length, 12);
-  assert.equal(targetsFromPrompt(provider.calls[1].prompt)[0].requiredSourceScope.length, 4);
+  assert.equal(targetsFromPrompt(provider.calls[0].prompt)[0].sourceScope.length, 12);
+  assert.equal(targetsFromPrompt(provider.calls[1].prompt)[0].sourceScope.length, 4);
   const loaded = await fixture.storage.load();
   assert.equal(loaded.state.pendingReview.entries.length, 0);
 });
@@ -961,7 +960,7 @@ test('S4 Retained observation IDs are unusable when their original owned source 
   });
   assert.equal(dispatch.valid, true);
   assert.deepEqual(dispatch.targetObservationIds[NPC_ID], []);
-  assert.equal(targetsFromPrompt(dispatch.prompt)[0].observations.length, 0);
+  assert.equal((targetsFromPrompt(dispatch.prompt)[0].observations || []).length, 0);
 
   const envelope = {
     version: '1',
