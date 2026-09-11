@@ -93,9 +93,14 @@ export class SillyTavernDevelopmentProvider {
       throw new DevelopmentProviderError('Development review prompt must be non-empty.', 'invalid_development_prompt');
     }
     const service = await this._service();
-    // Fail closed if the selected profile disappeared before dispatch. Some host
-    // implementations return null/undefined rather than throwing for a missing ID.
-    const selectedProfile = service.getProfile(profileId.trim());
+    // SillyTavern 1.18.0 getProfile() throws when the ID is absent. Normalize both
+    // throwing and null-returning host implementations to Alpha's stable code.
+    let selectedProfile;
+    try {
+      selectedProfile = service.getProfile(profileId.trim());
+    } catch (error) {
+      throw new DevelopmentProviderError('Selected Development connection profile no longer exists.', 'development_profile_missing', { cause: error });
+    }
     if (!selectedProfile) {
       throw new DevelopmentProviderError('Selected Development connection profile no longer exists.', 'development_profile_missing');
     }
