@@ -940,6 +940,7 @@ export class DevelopmentReviewQueue {
     if (scopedEntryIds.size > 0 && batch.length === 0) {
       return { status: 'source_unavailable', error: 'Requested manual audit entry is no longer pending.' };
     }
+    if (batch.length === 0) return { status: 'idle' };
     if (job.entryOverrides) {
       batch = batch.map((entry) => {
         const override = job.entryOverrides[entry.id];
