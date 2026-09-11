@@ -14,6 +14,7 @@ import {
   validateAlphaSettings,
   DEVELOPMENT_MIN_CADENCE,
   DEVELOPMENT_MAX_CADENCE,
+  DEVELOPMENT_REASONING_EFFORTS,
   ROUTINE_DOSSIER_BUDGET_MIN,
   ROUTINE_DOSSIER_BUDGET_MAX,
   DEVELOPMENT_MIN_RESPONSE_LIMIT,
@@ -96,13 +97,17 @@ export class SettingsView {
       '<option value="">Select a Connection Profile</option>',
       selectedProfile ? `<option value="${escapeHtml(selectedProfile)}" selected>Loading selected profile…</option>` : '',
     ].join('');
+    const reasoningOptions = DEVELOPMENT_REASONING_EFFORTS.map((value) => {
+      const label = value === 'auto' ? 'Profile / provider default' : `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
+      return `<option value="${value}" ${s.developmentReasoningEffort === value ? 'selected' : ''}>${label}</option>`;
+    }).join('');
 
     return `
       <div class="alpha-settings-container">
         <div class="alpha-view-heading">
           <span class="alpha-kicker">CONFIGURATION</span>
           <h3 class="alpha-settings-title">NPC State Alpha Settings</h3>
-          <p class="alpha-settings-desc">Choose how NPCs are admitted, reviewed, and scored. Changes apply after Save Settings.</p>
+          <p class="alpha-settings-desc">Choose how NPCs are admitted, reviewed, displayed, and scored. Changes apply after Save Settings.</p>
         </div>
 
         <div class="alpha-settings-group">
@@ -123,6 +128,10 @@ export class SettingsView {
             <div><label class="alpha-setting-label" for="alpha-setting-budget">Routine dossier detail budget</label><div class="alpha-setting-help">Auto aims near four detailed existing dossiers but may expand for correctness. Numeric preference: ${ROUTINE_DOSSIER_BUDGET_MIN}–${ROUTINE_DOSSIER_BUDGET_MAX}.</div></div>
             <select id="alpha-setting-budget" class="alpha-setting-budget">${budgetOptions}</select>
           </div>
+          <div class="alpha-setting-row alpha-setting-row-toggle">
+            <div><strong>Show dossier diagnostics</strong><div class="alpha-setting-help">Shows technical Development status, ownership, source observations, and bookkeeping inside the dossier. Off keeps the dossier compact; diagnostics remain recorded.</div></div>
+            <label class="alpha-switch-label"><input type="checkbox" class="alpha-setting-show-diagnostics" ${s.showDossierDiagnostics ? 'checked' : ''} /><span>${s.showDossierDiagnostics ? 'Shown' : 'Hidden'}</span></label>
+          </div>
         </div>
 
         <div class="alpha-settings-group">
@@ -138,6 +147,10 @@ export class SettingsView {
           <div class="alpha-setting-row alpha-profile-setting-row">
             <div><label class="alpha-setting-label" for="alpha-setting-profile">Development connection profile</label><div class="alpha-setting-help alpha-profile-help">Choose a supported SillyTavern Connection Manager profile. Alpha uses it only for Development review and never falls back silently.</div></div>
             <select id="alpha-setting-profile" class="alpha-setting-profile" data-selected-profile="${escapeHtml(selectedProfile)}">${initialProfileOptions}</select>
+          </div>
+          <div class="alpha-setting-row">
+            <div><label class="alpha-setting-label" for="alpha-setting-reasoning">Development reasoning effort</label><div class="alpha-setting-help">Routine extraction defaults to Low to avoid runaway hidden reasoning. The request is sent through SillyTavern's supported reasoning-effort override; Auto leaves the profile/provider default untouched.</div></div>
+            <select id="alpha-setting-reasoning" class="alpha-setting-reasoning">${reasoningOptions}</select>
           </div>
           <div class="alpha-setting-row">
             <div><label class="alpha-setting-label" for="alpha-setting-limit">Response allowance</label><div class="alpha-setting-help">Requested Development response-token allowance. Default ${ALPHA_SETTINGS_DEFAULTS.developmentResponseLimit}; valid ${DEVELOPMENT_MIN_RESPONSE_LIMIT}–${DEVELOPMENT_MAX_RESPONSE_LIMIT}.</div></div>
@@ -238,7 +251,9 @@ export class SettingsView {
         developmentCadence: numberValue(container, '.alpha-setting-cadence'),
         developmentConnectionProfile: container.querySelector('.alpha-setting-profile')?.value?.trim() || null,
         developmentResponseLimit: numberValue(container, '.alpha-setting-limit'),
+        developmentReasoningEffort: container.querySelector('.alpha-setting-reasoning')?.value,
         routineDossierDetailBudget: budgetRaw === 'auto' ? 'auto' : Number(budgetRaw),
+        showDossierDiagnostics: Boolean(container.querySelector('.alpha-setting-show-diagnostics')?.checked),
         relationshipScoreCap: numberValue(container, '.alpha-setting-score-cap'),
         relationshipInertia: numberValue(container, '.alpha-setting-inertia'),
         relationshipHistoryLimit: numberValue(container, '.alpha-setting-history-limit'),
