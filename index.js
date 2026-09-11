@@ -6,6 +6,7 @@
  */
 
 import { SillyTavernAdapter } from './src/host/sillytavern-adapter.js';
+import { installGenerationInterceptorBridge } from './src/host/generation-interceptor-bridge.js';
 import { DevelopmentReviewQueue } from './src/host/development-queue.js';
 import { UIController } from './src/ui/controller.js';
 
@@ -65,6 +66,15 @@ export function initExtension(options = {}) {
   // are ready so its lifecycle listeners cannot be permanently missed.
   if (!activeAdapterInstance.initialized) {
     activeAdapterInstance.initialize();
+  }
+
+  // SillyTavern's manifest interceptor receives a prompt-time projection whose
+  // message bytes may differ from canonical ctx.chat after regex/file/media prompt
+  // transforms. Install the bridge only after the adapter owns a valid host hook;
+  // it binds the projected request back to authoritative chat before provenance is
+  // fingerprinted, without weakening the adapter's fail-closed source checks.
+  if (activeAdapterInstance.initialized) {
+    installGenerationInterceptorBridge(activeAdapterInstance);
   }
 
   if (activeAdapterInstance.initialized && options.ui !== false && !activeUIController) {
