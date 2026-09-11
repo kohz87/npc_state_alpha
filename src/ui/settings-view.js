@@ -208,10 +208,10 @@ export class SettingsView {
     if (help) {
       if (info?.available === false) {
         help.textContent = `Connection Profiles unavailable: ${info?.error || 'SillyTavern did not expose a supported profile list.'}`;
-      } else if (profiles.length === 0) {
-        help.textContent = 'No supported Connection Manager profiles were found. Create one in SillyTavern, then focus this selector to refresh it.';
       } else if (selected && !profiles.some((profile) => profile.id === selected)) {
         help.textContent = 'The saved Development profile is no longer available. Choose another profile and Save Settings.';
+      } else if (profiles.length === 0) {
+        help.textContent = 'No supported Connection Manager profiles were found. Create one in SillyTavern, then focus this selector to refresh it.';
       } else {
         help.textContent = `${profiles.length} supported Connection Manager profile${profiles.length === 1 ? '' : 's'} available. Alpha uses the selected profile only for Development review.`;
       }
