@@ -37,6 +37,18 @@ function normalizeResponse(result) {
   };
 }
 
+function normalizeProfileOption(profile) {
+  const id = String(profile?.id || '').trim();
+  const name = String(profile?.name || profile?.id || '').trim();
+  if (!id || !name) return null;
+  return {
+    id,
+    name,
+    api: typeof profile?.api === 'string' && profile.api.trim() ? profile.api.trim() : null,
+    model: typeof profile?.model === 'string' && profile.model.trim() ? profile.model.trim() : null,
+  };
+}
+
 export class SillyTavernDevelopmentProvider {
   constructor(options = {}) {
     this.moduleLoader = options.moduleLoader || ((specifier) => import(specifier));
@@ -55,6 +67,37 @@ export class SillyTavernDevelopmentProvider {
       throw new DevelopmentProviderError('SillyTavern Connection Manager request service is unavailable.', 'connection_manager_unavailable');
     }
     return service;
+  }
+
+  /**
+   * Returns the supported SillyTavern Connection Manager profiles that may be
+   * selected for Development. This is UI metadata only; credentials never leave
+   * the host service and Alpha still resolves the selected ID again at dispatch.
+   */
+  async listSupportedProfiles() {
+    try {
+      const service = await this._service();
+      if (typeof service.getSupportedProfiles !== 'function') {
+        return {
+          available: false,
+          profiles: [],
+          reason: 'connection_manager_profile_listing_unavailable',
+          error: 'SillyTavern Connection Manager does not expose supported profile listing.',
+        };
+      }
+      const profiles = service.getSupportedProfiles()
+        .map(normalizeProfileOption)
+        .filter(Boolean)
+        .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
+      return { available: true, profiles, reason: null, error: '' };
+    } catch (error) {
+      return {
+        available: false,
+        profiles: [],
+        reason: error?.code || 'connection_manager_unavailable',
+        error: error?.message || String(error),
+      };
+    }
   }
 
   async inspectConfiguredProfile(profileId) {
