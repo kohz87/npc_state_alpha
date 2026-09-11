@@ -55,6 +55,26 @@ export function resetNpcIdCounterForTesting() {
 }
 
 /**
+ * Builds an exact, proposal-scoped identity key for history replay.
+ * The key intentionally includes the wire identity fields and does not use
+ * semantic similarity or proposal array position.
+ */
+export function buildIdentityReplayKey(proposal) {
+  if (!proposal || typeof proposal !== 'object') return null;
+  if (typeof proposal.localRef !== 'string' || proposal.localRef.trim() === '') return null;
+  if (typeof proposal.name !== 'string' || proposal.name.trim() === '') return null;
+  const aliases = Array.isArray(proposal.aliases)
+    ? proposal.aliases.map((alias) => typeof alias === 'string' ? alias.trim() : alias)
+    : [];
+  return JSON.stringify([
+    proposal.localRef.trim(),
+    proposal.name.trim(),
+    proposal.identityKind || 'named',
+    aliases,
+  ]);
+}
+
+/**
  * Resolves a batch of identity proposals (both existing IDs and NEW localRefs)
  * against current state and admission policy.
  *
@@ -189,8 +209,28 @@ export function resolveIdentityBatch(
         }
       }
 
-      // Assign locally assigned stable ID with collision safety
-      const assignedId = generateStableNpcId(currentState, seenIds);
+      // Recovery may replay a previously accepted exact source. In that narrow
+      // path the coordinator supplies its original runtime ID; normal admission
+      // still allocates locally. Preferred IDs are never inferred by array order.
+      const preferredIds = opts.preferredIds instanceof Map
+        ? opts.preferredIds
+        : (opts.preferredIds && typeof opts.preferredIds === 'object' ? new Map(Object.entries(opts.preferredIds)) : null);
+      const preferredId = preferredIds?.get(localRef);
+      let assignedId;
+      if (preferredId !== undefined) {
+        if (typeof preferredId !== 'string' || preferredId.trim() === '') {
+          errors.push(`Recovery preferred ID for '${localRef}' must be a non-empty string.`);
+          continue;
+        }
+        assignedId = preferredId.trim();
+        if (currentState.npcs?.[assignedId] || currentState.tombstones?.[assignedId] || seenIds.has(assignedId)) {
+          errors.push(`Recovery preferred ID '${assignedId}' for '${localRef}' collides with current state or batch identity.`);
+          continue;
+        }
+        seenIds.add(assignedId);
+      } else {
+        assignedId = generateStableNpcId(currentState, seenIds);
+      }
       const descriptor = {
         isNew: true,
         localRef,

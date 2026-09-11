@@ -27,6 +27,7 @@ import { SillyTavernDevelopmentProvider } from './development-provider.js';
 import { DIAGNOSTIC_EVENT_TYPES } from './diagnostics.js';
 import { computeContentFingerprint } from './fingerprint.js';
 import { buildPrecedingLineage, getMessageSwipeId } from './sillytavern-adapter.js';
+import { captureStoryHistoryBoundary } from './history-recovery.js';
 
 const BLOCKING_REVIEW_STATUSES = new Set(['failed', 'unavailable', 'deferred']);
 
@@ -329,6 +330,21 @@ export class DevelopmentReviewQueue {
     if (!job.controller.signal.aborted) job.controller.abort('foreground_priority');
     this._record(DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_YIELDED, { chatId, reason: 'foreground_priority' });
     return true;
+  }
+
+  async onHistoryInvalidation(chatId = this.storage.getChatId()) {
+    if (!chatId) return false;
+    const job = this.inFlightByChat.get(chatId);
+    this.coalescedByChat.delete(chatId);
+    if (!job) return false;
+    if (!job.controller.signal.aborted) job.controller.abort('history_invalidated');
+    await job.promise.catch(() => {});
+    return true;
+  }
+
+  onHistoryRecovered(chatId = this.storage.getChatId()) {
+    if (!chatId || chatId !== this.storage.getChatId()) return;
+    this.trigger('history_recovered').catch(() => {});
   }
 
   onChatChanged(activeChatId = this.storage.getChatId()) {
@@ -918,6 +934,10 @@ export class DevelopmentReviewQueue {
       readFieldRevisions: dependencyMaps.readFieldRevisions,
       readFieldDependencies: dependencyMaps.readFieldDependencies,
       pendingReviewResolutions,
+      historyBoundary: captureStoryHistoryBoundary(lateCtx.chat, job.chatId, null, {
+        buildPrecedingLineage,
+        getMessageSwipeId,
+      }),
     });
 
     if (!commitResult.success) {

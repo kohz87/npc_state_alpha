@@ -48,6 +48,10 @@ import {
 import {
   PromptInjector,
 } from './prompt-injector.js';
+import {
+  StoryHistoryRecovery,
+  captureStoryHistoryBoundary,
+} from './history-recovery.js';
 
 /**
  * Builds deterministic preceding lineage array from preceding chat messages.
@@ -197,6 +201,14 @@ export class SillyTavernAdapter {
     // so SillyTavern's first render cannot paint the transport trailer. Raw `mes`
     // and swipes remain untouched; the temporary override is restored after render.
     this._stagedDisplayOverrides = new WeakMap();
+    this.historyRecovery = options.historyRecovery || new StoryHistoryRecovery({
+      storage: this.storage,
+      coordinator: this.coordinator,
+      diagnostics: this.diagnostics,
+      getContext: () => this.getContext(),
+      buildPrecedingLineage,
+      getMessageSwipeId,
+    });
   }
 
   /**
@@ -258,6 +270,7 @@ export class SillyTavernAdapter {
   /** Attach the S4 Development scheduler without creating another state path. */
   setDevelopmentReview(review) {
     this.developmentReview = review || null;
+    this.historyRecovery?.setDevelopmentReview?.(this.developmentReview);
     if (this.developmentReview) this.developmentReview.setSettingsSource?.(() => this.getRuntimeSettings());
     return this.developmentReview;
   }
@@ -401,7 +414,21 @@ export class SillyTavernAdapter {
     this.initialized = true;
     const initialChatId = this.storage.getChatId();
     if (initialChatId) {
-      this.reconcileCommittedTransportDisplay({ expectedChatId: initialChatId }).catch(() => {});
+      this.historyRecovery.requestRecovery('EXTENSION_INITIALIZED', null)
+        .then((result) => {
+          if (result?.success && result.status === 'recovered') {
+            this.processedDedupKeys = new Set(result.processedSourceKeys || []);
+          }
+          return this.reconcileCommittedTransportDisplay({ expectedChatId: initialChatId });
+        })
+        .catch((error) => {
+          this.diagnostics.record({
+            type: DIAGNOSTIC_EVENT_TYPES.HISTORY_RECOVERY_FAILED,
+            chatId: initialChatId,
+            eventName: 'EXTENSION_INITIALIZED',
+            reason: error?.message || String(error),
+          });
+        });
     }
     return true;
   }
@@ -427,6 +454,25 @@ export class SillyTavernAdapter {
           reason: 'No valid chat ID available during generation interceptor.',
         });
         return;
+      }
+
+      const historyCheck = await this.historyRecovery.requestRecovery('GENERATION_HISTORY_CHECK', null);
+      if (!historyCheck?.success) {
+        this.inFlightRequest = null;
+        const staleCtx = this.getContext();
+        try {
+          staleCtx?.setExtensionPrompt?.('npc_state_alpha', '', 1, 0, false);
+        } catch {}
+        this.diagnostics.record({
+          type: DIAGNOSTIC_EVENT_TYPES.HISTORY_RECOVERY_FAILED,
+          chatId,
+          eventName: 'GENERATION_HISTORY_CHECK',
+          reason: historyCheck?.reason || historyCheck?.status || 'history_recovery_failed',
+        });
+        return;
+      }
+      if (historyCheck.status === 'recovered') {
+        this.processedDedupKeys = new Set(historyCheck.processedSourceKeys || []);
       }
 
       const ownershipConflict = await this.refreshOwnershipConflict();
@@ -755,6 +801,25 @@ export class SillyTavernAdapter {
   async _processMessageReceived(messageId, eventType) {
     try {
       const chatId = this.storage.getChatId();
+      // Continuation is normalized later by the accepted S3 path: the host has
+      // temporarily appended bytes after the prior trailer, so treating that
+      // intermediate shape as canonical divergence would discard valid state.
+      const historyCheck = eventType === 'continue'
+        ? { success: true, status: 'no_change' }
+        : await this.historyRecovery.requestRecovery('MESSAGE_RECEIVED_HISTORY_CHECK', messageId);
+      if (!historyCheck?.success) {
+        this.inFlightRequest = null;
+        this.diagnostics.record({
+          type: DIAGNOSTIC_EVENT_TYPES.HISTORY_RECOVERY_FAILED,
+          chatId,
+          eventName: 'MESSAGE_RECEIVED_HISTORY_CHECK',
+          reason: historyCheck?.reason || historyCheck?.status || 'history_recovery_failed',
+        });
+        return;
+      }
+      if (historyCheck.status === 'recovered') {
+        this.processedDedupKeys = new Set(historyCheck.processedSourceKeys || []);
+      }
       const ownershipConflict = await this.refreshOwnershipConflict();
       if (ownershipConflict || !this.applyRuntimeSettings().enabled) {
         this.inFlightRequest = null;
@@ -1182,6 +1247,10 @@ export class SillyTavernAdapter {
         capturedDependencies,
         dedupKeys: [dedupKey],
         pendingReviewEntries,
+        historyBoundary: captureStoryHistoryBoundary(chat, chatId, numericPosition, {
+          buildPrecedingLineage,
+          getMessageSwipeId,
+        }),
       });
 
       if (commitResult.success) {
@@ -1264,21 +1333,28 @@ export class SillyTavernAdapter {
   }
 
   /**
-   * Generic host branch invalidation handler (Requirement 6).
-   * Clears in-flight request tied to an invalidated branch and records bounded diagnostics.
-   * Never mutates, saves, or restores Alpha state (no second state mutation path; history reconstruction belongs to S6).
+   * Generic host branch invalidation handler (Requirement 6 / S6).
+   * Clears the invalidated in-flight request, delegates canonical reconstruction
+   * to the shared S6 coordinator, and records bounded diagnostics.
    *
    * @param {string} eventName
    * @param {number|string} [messageId]
    */
-  handleBranchInvalidation(eventName, messageId) {
+  async handleBranchInvalidation(eventName, messageId) {
     this.inFlightRequest = null;
     this.diagnostics.record({
       type: DIAGNOSTIC_EVENT_TYPES.HOST_EVENT_REJECTED,
-      reason: `Branch invalidation: event '${eventName}' cleared in-flight request.`,
+      reason: `Branch invalidation: event '${eventName}' cleared in-flight request and requested canonical S6 recovery.`,
       messageId,
       eventName,
     });
+    const result = await this.historyRecovery.requestRecovery(eventName, messageId);
+    if (result?.success && result.status === 'recovered') {
+      this.processedDedupKeys = new Set(result.processedSourceKeys || []);
+      const chatId = this.storage.getChatId();
+      if (chatId) await this.reconcileCommittedTransportDisplay({ expectedChatId: chatId });
+    }
+    return result;
   }
 
   /**
@@ -1294,7 +1370,7 @@ export class SillyTavernAdapter {
    * Resets in-flight generation and switches storage context.
    * @param {string} [chatId]
    */
-  handleChatChanged(chatId) {
+  async handleChatChanged(chatId) {
     const previousChatId = this.inFlightRequest?.chatId || null;
     this.inFlightRequest = null;
     const newChatId = this.storage.getChatId();
@@ -1305,7 +1381,11 @@ export class SillyTavernAdapter {
       newChatId,
     });
     if (newChatId) {
-      this.reconcileCommittedTransportDisplay({ expectedChatId: newChatId }).catch(() => {});
+      const result = await this.historyRecovery.requestRecovery('CHAT_LOADED', chatId ?? null);
+      if (result?.success && result.status === 'recovered') {
+        this.processedDedupKeys = new Set(result.processedSourceKeys || []);
+      }
+      await this.reconcileCommittedTransportDisplay({ expectedChatId: newChatId });
     }
     this.developmentReview?.onChatChanged?.(newChatId);
   }
@@ -1664,6 +1744,10 @@ export class SillyTavernAdapter {
       capturedDependencies,
       dedupKeys: [dedupKey],
       pendingReviewEntries,
+      historyBoundary: captureStoryHistoryBoundary(chat, chatId, messageIndex, {
+        buildPrecedingLineage,
+        getMessageSwipeId,
+      }),
     });
 
     if (!commitResult.success) {

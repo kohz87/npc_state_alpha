@@ -12,7 +12,7 @@ Keep S0–S10 and existing completed work. This revision makes C08–C13 develop
 
 **Execution scope**
 
-Implement the complete first usable Alpha release, including both extraction paths, settings/UI, source validation, durable storage, branch/recovery behavior, narrowly scoped import support, tests, documentation and an installable package. Complete reviewable commits and the normal release/deployment workflow when authorized and verified. Do not stop at a scaffold or architecture proposal.
+Implement the complete first usable Alpha release around Alpha's own contracts and state model, including both extraction paths, settings/UI, source validation, durable storage, branch/recovery behavior, native portability, tests, documentation and an installable package. Legacy compatibility/migration is a later explicit adapter concern and may be claimed only after its own verified-fixture acceptance. Complete reviewable commits and the normal release/deployment workflow when authorized and verified. Do not stop at a scaffold or architecture proposal.
 
 Do not modify Beta/reference repositories, install into a real user's SillyTavern, alter a real NPC database, activate competing extensions or execute imports without explicit authorization for those actions. Repository implementation and mock/fixture tests must not touch user data.
 
@@ -183,9 +183,9 @@ Implement settings from one registry:
 
 Auto detail budget aims near four detailed records but expands for correctness. It is not a cap on updated/stored NPCs, and must not hide necessary third/fifth-character profile context. Do not add a separate profile-count control initially.
 
-**S6. History safety, delayed checkpoints and explicit import**
+**S6. History safety, delayed checkpoints and Alpha-native portability**
 
-Port checkpoint/recovery as a coherent subsystem, adapting it for delayed development commits.
+Build checkpoint/recovery as one coherent Alpha subsystem, adapting it for delayed development commits without introducing a second state or authority path.
 
 Prove:
 - Immediate and durable state plus observations/queue/replay state restore together.
@@ -197,10 +197,11 @@ Prove:
 - Storage/CAS conflicts and history changes during saving never produce false success.
 - Consolidation, dispositions and support links restore with their associated field revisions; rollback leaves neither orphan evidence links nor future-derived profile conclusions.
 - Missing trustworthy baseline requires explicit recovery rather than fabricated history.
+- Imported state with unproven earlier story history uses one format-neutral import baseline so rollback cannot cross into untrusted history automatically.
 
-Implement an explicit importer for the documented selected Beta schema/version range using exported fixture copies. Preserve supported values and ownership; report unsupported/inconsistent fields. Establish a new labeled Alpha import baseline and replay boundary. Do not fabricate old checkpoints or provenance.
+Define Alpha's own native portable state envelope independently of legacy formats. Initial native format is `npc_state_alpha.native_state` version 1 containing exactly one canonical `npc_state_alpha.v1` schema-valid state. Serialization must be deterministic for the same state; parsing validates envelope/version/state and fails closed on unsupported versions. Native bundle creation/parsing adds no provenance, source history, timestamps, checkpoints, observations/support or relationship reasons that are not already present in canonical state. Because the bundle does not archive authoritative SillyTavern narrative bytes, parsing alone never installs/restores it into a live chat; an explicit restore must verify source history or establish the format-neutral import baseline before treating pre-import history as recoverable.
 
-Never modify the Beta sidecar or silently activate Alpha. Document how the user switches automatic ownership between extensions and how to return to Beta without Alpha writing its data. Detect conflicting enabled writers where host capability permits.
+Legacy Beta compatibility is deliberately not an S6 acceptance dependency. Do not implement or guess a Beta adapter in S6. Preserve existing competing-owner safety and source-data isolation, and defer verified legacy migration to S10's explicit compatibility/release boundary.
 
 **S7. Consolidate prompts and measure context cost**
 
@@ -244,10 +245,10 @@ Do not trade missed changes or additional retry work for a smaller first prompt.
 | Queue | New-NPC early trigger, cadence, coalescing, reload, partial target completion, zero-change receipt, backlog/unavailable source, bounded retries and no loss of pending evidence |
 | Background concurrency | Later fast commit survives; same durable dependency change defers; unrelated live change permits valid commit; death/deletion/manual lock/source change rejects dependent stale work |
 | Next-request availability | Completed review visible in next dispatch with zero retrieval scan calls; unfinished review does not block; post-dispatch commit leaves sent prompt unchanged; tentative observations never injected as established facts |
-| Checkpoints | Late review actual boundary, tail deletion, middle divergence, surviving suffix, pending receipt rollback, no future knowledge and no false pre-import baseline |
+| Checkpoints | Late review actual boundary, tail deletion, middle divergence, surviving suffix, pending receipt rollback, no future knowledge and no crossing a format-neutral imported-history baseline without proof |
 | Persistence | Atomic source/updates/receipts, CAS conflicts, stale-before-save, changed-during-save, no false checkpoint or UI success |
 | Settings/UI | Auto/numeric/invalid normalization, soft overflow, provider route failure, new-dossier pending display, conflicting extension ownership |
-| Import | Documented fixture versions only, source sidecar unchanged, fresh namespace, preserved supported ownership, unsupported records reported, pre-baseline score replay blocked |
+| Native portability / later migration | S6 native bundle version/round-trip/rejection/no-fabrication; later legacy adapters use only verified fixture versions, leave source data unchanged, translate into Alpha canonical state, report unsupported records and establish the neutral import baseline when pre-import history is unproven |
 | Package/host | Reachable standalone files only, packaged module load, actual host lifecycle/capture and foreground-vs-background scheduling where executable |
 
 Use existing-style controlled host/storage simulations and delayed promises. Port relevant Beta regression scenarios, updating expectations only where Alpha deliberately differs. Retain tests for wrong targets and malformed output even when mocked responses cannot prove semantic generation correctness.
@@ -274,7 +275,9 @@ Use simple continuation, one-field update, two-NPC interaction, new admission, p
 
 The user's reported older sub-10-second and current 15–25-second timings motivate the work; they are not a gate or guaranteed result. Do not claim faster total generation merely because the separate routine scanner vanished. If provider access is absent, deliver executable fixtures and label live speed/accuracy unverified.
 
-**S10. Repository workflow and release**
+**S10. Repository workflow, legacy compatibility and release**
+
+S10 owns legacy migration compatibility for any release that claims it. Implement Beta or other legacy adapters only after obtaining verified real serializer/export fixtures or equally authoritative schema evidence for each supported version. Detect source format/version explicitly; reject unsupported or internally inconsistent combinations; translate through a narrow adapter into the existing Alpha canonical state; never change Alpha runtime semantics to imitate legacy quirks; never mutate the source database or auto-enable Alpha; and add dedicated migration regressions for mapping, unsupported fields, no fabricated provenance/history/reasons/checkpoints/observations/support, neutral import-baseline behavior and source-data immutability. The reported Beta v0.5.38 bundle/v3-schema incompatibility is a reason to require verified fixtures, not permission to infer a schema. Alpha-native releases may complete without a Beta compatibility claim, while the later adapter requirement remains open until its own evidence exists.
 
 Use Node 22+ unless actual dependency constraints justify another supported baseline. Establish ordinary scripts:
 - npm run validate — syntax, version/contract/docs consistency, dependency reachability;

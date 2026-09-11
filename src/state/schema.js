@@ -809,6 +809,8 @@ export function validateState(state) {
       'commitRevision',
       'timestamp',
       'sourceDependencies',
+      'historyBoundary',
+      'identityAssignments',
       'operation',
       'npcs',
       'tombstones',
@@ -871,6 +873,45 @@ export function validateState(state) {
             }
           } else {
             errors.push(`State history.checkpoints[${i}].sourceDependencies[${dIdx}] must be a non-empty string or captured dependency object.`);
+          }
+        }
+      }
+      if (chk.historyBoundary !== undefined && chk.historyBoundary !== null) {
+        if (!chk.historyBoundary || typeof chk.historyBoundary !== 'object' || Array.isArray(chk.historyBoundary)) {
+          errors.push(`State history.checkpoints[${i}].historyBoundary must be null or an owned source record.`);
+        } else {
+          const boundaryValidation = validateOwnedSourceRecord(chk.historyBoundary);
+          if (!boundaryValidation.valid) errors.push(`State history.checkpoints[${i}].historyBoundary invalid: ${boundaryValidation.error}`);
+        }
+      }
+      if (chk.identityAssignments !== undefined) {
+        if (!Array.isArray(chk.identityAssignments)) {
+          errors.push(`State history.checkpoints[${i}].identityAssignments must be an array.`);
+        } else {
+          const allowedAssignmentKeys = ['localRef', 'assignedId', 'name', 'identityKind', 'identityKey', 'sourceProvenance'];
+          for (let aIdx = 0; aIdx < chk.identityAssignments.length; aIdx++) {
+            const assignment = chk.identityAssignments[aIdx];
+            if (!assignment || typeof assignment !== 'object' || Array.isArray(assignment)) {
+              errors.push(`State history.checkpoints[${i}].identityAssignments[${aIdx}] must be an object.`);
+              continue;
+            }
+            for (const key of Object.keys(assignment)) {
+              if (!allowedAssignmentKeys.includes(key)) errors.push(`State history.checkpoints[${i}].identityAssignments[${aIdx}] contains unknown key '${key}'.`);
+            }
+            if (typeof assignment.localRef !== 'string' || assignment.localRef.trim() === '' ||
+                typeof assignment.assignedId !== 'string' || assignment.assignedId.trim() === '') {
+              errors.push(`State history.checkpoints[${i}].identityAssignments[${aIdx}] requires non-empty localRef and assignedId.`);
+            }
+            if (assignment.identityKey !== undefined &&
+                (typeof assignment.identityKey !== 'string' || assignment.identityKey.trim() === '')) {
+              errors.push(`State history.checkpoints[${i}].identityAssignments[${aIdx}].identityKey must be a non-empty string when supplied.`);
+            }
+            if (assignment.sourceProvenance !== undefined) {
+              const sourceValidation = validateOwnedSourceRecord(assignment.sourceProvenance);
+              if (!sourceValidation.valid) {
+                errors.push(`State history.checkpoints[${i}].identityAssignments[${aIdx}].sourceProvenance invalid: ${sourceValidation.error}`);
+              }
+            }
           }
         }
       }

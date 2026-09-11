@@ -1,5 +1,5 @@
 /**
- * NPC State Alpha — S5 Repository Validation Script
+ * NPC State Alpha — S6 Repository Validation Script
  *
  * Verifies:
  * - Module imports and dependency reachability
@@ -8,7 +8,7 @@
  * - Production wire examples validity
  * - Accepted S4 Development settings/queue/provider/context integration
  * - S5 practical UI, user commands, relationship mechanics, and C14 ownership gate
- * - Absence of accidental S6+ runtime scaffolding or external runtime dependencies
+ * - S6 checkpoint metadata, history reconstruction, delayed-work reconciliation, native portability, and reload hooks
  */
 
 import fs from 'node:fs';
@@ -20,7 +20,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 async function runValidation() {
-  console.log('--- NPC State Alpha: S5 Repository Validation ---');
+  console.log('--- NPC State Alpha: S6 Repository Validation ---');
   let errors = 0;
 
   function fail(msg) {
@@ -259,6 +259,30 @@ async function runValidation() {
     pass('createInitialState() passes validateState()');
   }
 
+  if (runtime.ALPHA_NATIVE_BUNDLE_FORMAT !== 'npc_state_alpha.native_state' || runtime.ALPHA_NATIVE_BUNDLE_VERSION !== 1) {
+    fail('S6 Alpha-native portable bundle format/version are inconsistent with C15.');
+  } else {
+    pass('S6 Alpha-native portable bundle format/version verified.');
+  }
+  const portableFunctions = ['createAlphaNativeBundle', 'serializeAlphaNativeBundle', 'parseAlphaNativeBundle', 'validateAlphaNativeBundle'];
+  if (portableFunctions.some((name) => typeof runtime[name] !== 'function')) {
+    fail('S6 Alpha-native portable bundle functions are missing from shared runtime exports.');
+  } else {
+    pass('S6 Alpha-native portable bundle functions exported through the shared runtime.');
+  }
+  const portableRoundTrip = runtime.parseAlphaNativeBundle(runtime.serializeAlphaNativeBundle(initialState));
+  if (!portableRoundTrip.success ||
+      runtime.serializeAlphaNativeBundle(portableRoundTrip.state) !== runtime.serializeAlphaNativeBundle(initialState)) {
+    fail('S6 Alpha-native portable bundle failed canonical empty-state round-trip.');
+  } else {
+    pass('S6 Alpha-native portable bundle canonical round-trip verified.');
+  }
+  if (runtime.IMPORT_BASELINE_MODE !== 'import_baseline') {
+    fail(`S6 format-neutral import baseline mode expected 'import_baseline', got '${runtime.IMPORT_BASELINE_MODE}'.`);
+  } else {
+    pass('S6 format-neutral import baseline mode verified.');
+  }
+
   // Verify S2 storage adapter and CAS mechanics
   const storage = new runtime.MemoryStorageAdapter();
   const initLoad = await storage.load();
@@ -421,9 +445,9 @@ async function runValidation() {
   }
   pass(`All ${requiredS5UserCommands.length} canonical S5 user commands verified.`);
   if (typeof runtime.restoreNpc === 'function') {
-    fail('S5 must not export restoreNpc; full tombstone restoration belongs to S6 history/recovery.');
+    fail('Canonical manual-deletion authority forbids fabricating an automatic restoreNpc path.');
   } else {
-    pass('S5 tombstone restoration remains deferred to S6 history/recovery.');
+    pass('S6 reconstruction preserves user-owned manual-deletion tombstones.');
   }
 
   // Relationship mechanics
@@ -493,21 +517,48 @@ async function runValidation() {
     pass('S5 C14 competing-owner detection/reporting hooks verified.');
   }
 
-  // 9. Explicit S6+ absence checks
-  const forbiddenS6Paths = [
-    'src/importer',
-    'src/history-rebuild',
-    'src/packaging',
+  // 9. S6 canonical history/recovery surface
+  const requiredS6HostFunctions = [
+    'StoryHistoryRecovery',
+    'analyzeStoryHistory',
+    'captureStoryHistoryBoundary',
+    'provenanceMatchesCanonicalHistory',
   ];
-
-  for (const p of forbiddenS6Paths) {
-    if (fs.existsSync(path.join(rootDir, p))) {
-      fail(`Accidental S6+ path created prematurely: ${p}`);
+  for (const name of requiredS6HostFunctions) {
+    if (typeof host[name] !== 'function') {
+      fail(`Expected S6 host export '${name}', found ${typeof host[name]}`);
     }
   }
-  pass('Confirmed no accidental S6+ history/import runtime modules exist.');
+  pass(`All ${requiredS6HostFunctions.length} S6 history/recovery primitives verified.`);
 
-  console.log(`--- S5 Validation finished with ${errors} error(s) ---`);
+  if (typeof runtime.CommitCoordinator?.prototype?.commitReconstruction !== 'function') {
+    fail('CommitCoordinator is missing the atomic S6 commitReconstruction boundary.');
+  } else {
+    pass('CommitCoordinator atomic S6 reconstruction boundary verified.');
+  }
+
+  const requiredS6QueueMethods = ['onHistoryInvalidation', 'onHistoryRecovered'];
+  for (const method of requiredS6QueueMethods) {
+    if (typeof devQueueProto?.[method] !== 'function') {
+      fail(`DevelopmentReviewQueue is missing S6 method '${method}'.`);
+    }
+  }
+  pass('S6 Development invalidation/requeue coordination verified.');
+
+  if (typeof rootIndex?.getActiveHistoryRecovery !== 'function') {
+    fail('Root index.js missing getActiveHistoryRecovery export.');
+  } else {
+    pass('Root index.js exports getActiveHistoryRecovery.');
+  }
+
+  const historyPath = path.join(rootDir, 'src/host/history-recovery.js');
+  if (!fs.existsSync(historyPath)) {
+    fail('S6 canonical history recovery module is missing.');
+  } else {
+    pass('S6 canonical history recovery module exists.');
+  }
+
+  console.log(`--- S6 Validation finished with ${errors} error(s) ---`);
   return errors === 0 ? 0 : 1;
 }
 

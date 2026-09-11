@@ -6,6 +6,7 @@ import { SillyTavernAdapter } from '../src/host/sillytavern-adapter.js';
 import { extractAndParseOnePassTrailer, parseDevelopmentResponse } from '../src/contract/parser.js';
 import { validateOnePassEnvelope, validateDevelopmentEnvelope } from '../src/contract/validator.js';
 import { ALPHA_NAMESPACE, createInitialState, createDefaultNpcRecord } from '../src/state/schema.js';
+import { createCheckpoint } from '../src/state/checkpoints.js';
 
 // Exact turn-2 Gemini 3.8 Flash High outputs from the bounded S5 message-play probe.
 const canonicalCases = [
@@ -266,6 +267,58 @@ const canonicalCases = [
   },
 ];
 
+// Exact S6 Gemini reviewer outputs retained only after production-path confirmation.
+const s6GeminiFractional = {
+  user: 'I finished the eastern latch without complaint.',
+  assistant: `The wind whistled through the crenellations, dusting the stone floor with frost. Kaelen looked over at you as you finished securing the eastern latch without complaint. Her stern expression softened just a fraction, the rigid tension in her shoulders easing.
+
+"Perhaps I misjudged your resolve," Kaelen admitted quietly, handing you a flask of warm spiced cider. "Drink up. The wind cuts deep along the ramparts tonight."
+
+<npc_state_alpha_v1>
+{
+  "version": "1",
+  "proposals": [
+    {
+      "id": "npc_kaelen",
+      "present": true,
+      "activeInExchange": true,
+      "mood": "conflicted",
+      "relationshipEvaluation": {
+        "shifted": true,
+        "impact": "minor",
+        "axes": { "trust": 0.5, "tension": -0.25 },
+        "axisSupport": {
+          "trust": {
+            "reason": "Kaelen acknowledges your willingness to stand watch in the freezing cold, earning measured respect.",
+            "source": { "sourceRef": "current:assistant", "excerpt": "Kaelen admitted quietly, handing you a flask of warm spiced cider." }
+          },
+          "tension": {
+            "reason": "Sharing the warm cider eases the initial guarded defensiveness.",
+            "source": { "sourceRef": "current:assistant", "excerpt": "Drink up. The wind cuts deep along the ramparts tonight." }
+          }
+        }
+      },
+      "source": { "sourceRef": "current:assistant", "excerpt": "Kaelen admitted quietly, handing you a flask of warm spiced cider." },
+      "presenceSource": { "sourceRef": "current:assistant", "excerpt": "Kaelen admitted quietly, handing you a flask of warm spiced cider." }
+    }
+  ]
+}
+</npc_state_alpha_v1>`,
+};
+
+const s6GeminiAmbiguous = `The evening fog rolled thickly through the cobblestone alleyways, swallowing the faint amber glow of the lantern posts one by one. You pause by the shuttered apothecary, listening to the muffled rhythm of water dripping from the eaves into the drainage gutters.
+
+From somewhere deeper in the mist, past the turn toward the old docks, the hollow click of boots echoes against wet stone. A low murmur follows—perhaps a patrol exchanging whispers, or dockhands hauling late cargo before curfew—but the voices blur into the damp night air before any distinct words can be caught. For a fleeting second, a silhouette seems to detach itself from the gloom near the warehouse archway, only to dissolve into the swirling vapor as the wind shifts.
+
+Nothing stirs in the immediate passage except the damp breeze rattling a loose iron sign overhead. Whatever was out there in the fog has melted away into the labyrinth of the lower ward, leaving only the quiet drizzle and the distant tolling of the harbour bell.
+
+<npc_state_alpha_v1>
+{
+  "version": "1",
+  "proposals": []
+}
+</npc_state_alpha_v1>`;
+
 // Exact Gemini turn-1 malformed outputs, retained as production parser/validator stress fixtures.
 const malformedCases = [
   {
@@ -338,6 +391,11 @@ function seedHost(host) {
     appearanceForms: [{ formId: 'form_wolf', name: 'Wolf' }],
   });
   state.npcs.npc_guard = createDefaultNpcRecord('npc_guard', 'Town Guard');
+  createCheckpoint(state, {
+    writer: 'runtime',
+    mode: 'deterministic_fixture_baseline',
+    description: 'Explicit non-story baseline for bounded Gemini fixture replay',
+  });
   host.metadataByChatId.get(host.chatId)[ALPHA_NAMESPACE] = state;
 }
 
@@ -376,6 +434,68 @@ for (const probe of canonicalCases) {
     adapter.destroy();
   });
 }
+
+test('S6 Gemini compliant fractional relationship output uses production S3 path and S6 rollback', async () => {
+  const parsed = extractAndParseOnePassTrailer(s6GeminiFractional.assistant);
+  assert.equal(parsed.success, true);
+  const validation = validateOnePassEnvelope(parsed.payload);
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors));
+
+  const host = new MockSillyTavernHost({ chatId: 'gemini_s6_fractional' });
+  host.interceptorKey = 'gemini_s6_fractional_interceptor';
+  const state = createInitialState();
+  state.npcs.npc_kaelen = createDefaultNpcRecord('npc_kaelen', 'Kaelen');
+  createCheckpoint(state, {
+    writer: 'runtime',
+    mode: 'deterministic_fixture_baseline',
+    description: 'Explicit baseline for the S6 Gemini fractional replay fixture',
+  });
+  host.metadataByChatId.get(host.chatId)[ALPHA_NAMESPACE] = state;
+
+  const adapter = new SillyTavernAdapter({ getContext: () => host.getContext(), interceptorKey: host.interceptorKey });
+  assert.equal(adapter.initialize(), true);
+  host.sendUserMessage(s6GeminiFractional.user);
+  await host.triggerGenerateInterceptor('normal');
+  const assistantPosition = await host.receiveAssistantMessage(s6GeminiFractional.assistant);
+
+  let loaded = await adapter.storage.load();
+  assert.ok(loaded.state.npcs.npc_kaelen.relationship.trust > 0);
+  assert.ok(loaded.state.npcs.npc_kaelen.relationship.trust < 1);
+  assert.ok(loaded.state.npcs.npc_kaelen.relationship.tension < 0);
+  assert.ok(loaded.state.npcs.npc_kaelen.relationship.tension > -1);
+
+  await host.editMessage(
+    assistantPosition,
+    `Kaelen returned her attention to the silent rampart.\r\n\r\n<npc_state_alpha_v1>\r\n{"version":"1","proposals":[]}\r\n</npc_state_alpha_v1>`,
+  );
+  loaded = await adapter.storage.load();
+  assert.equal(loaded.state.npcs.npc_kaelen.relationship.trust, 0);
+  assert.equal(loaded.state.npcs.npc_kaelen.relationship.tension, 0);
+  adapter.destroy();
+});
+
+test('S6 Gemini ambiguous atmosphere accepts an empty proposal envelope without admitting phantom NPCs', async () => {
+  const parsed = extractAndParseOnePassTrailer(s6GeminiAmbiguous);
+  assert.equal(parsed.success, true);
+  const validation = validateOnePassEnvelope(parsed.payload);
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors));
+
+  const host = new MockSillyTavernHost({ chatId: 'gemini_s6_ambiguous' });
+  host.interceptorKey = 'gemini_s6_ambiguous_interceptor';
+  seedHost(host);
+  const adapter = new SillyTavernAdapter({ getContext: () => host.getContext(), interceptorKey: host.interceptorKey });
+  assert.equal(adapter.initialize(), true);
+  const before = await adapter.storage.load();
+  host.sendUserMessage('What can I make out in the fog?');
+  await host.triggerGenerateInterceptor('normal');
+  await host.receiveAssistantMessage(s6GeminiAmbiguous);
+  const after = await adapter.storage.load();
+
+  assert.equal(Object.keys(after.state.npcs).length, Object.keys(before.state.npcs).length);
+  assert.equal(after.state.pendingReview.entries.length, 0);
+  assert.equal(after.state.dedup.processedSourceKeys.length, 1);
+  adapter.destroy();
+});
 
 for (const probe of malformedCases) {
   test(`Gemini malformed message play rejects safely: ${probe.id}`, () => {

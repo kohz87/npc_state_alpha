@@ -31,12 +31,14 @@ import {
 import {
   createDefaultNpcRecord,
   cloneState,
+  validateState,
 } from '../state/schema.js';
 import {
   createCheckpoint,
 } from '../state/checkpoints.js';
 import {
   resolveIdentityBatch,
+  buildIdentityReplayKey,
   ADMISSION_POLICIES,
 } from './identity.js';
 import {
@@ -303,6 +305,8 @@ export class CommitCoordinator {
     tombstoneProposals = [],
     restoreProposals = [],
     exchangeContext,
+    historyBoundary = null,
+    identityOptions = {},
     operationMode = 'commit',
     userOptions = {},
   }) {
@@ -316,6 +320,17 @@ export class CommitCoordinator {
         success: false,
         error: `Unsupported writer '${writer}' at CommitCoordinator boundary.`,
         errorCode: 'invalid_writer',
+      };
+    }
+
+    if (!identityOptions || typeof identityOptions !== 'object' || Array.isArray(identityOptions)) {
+      return { success: false, error: "'identityOptions' must be an object.", errorCode: 'invalid_identity_options' };
+    }
+    if (identityOptions.preferredIds !== undefined && operationMode !== 'history_replay') {
+      return {
+        success: false,
+        error: 'Preferred stable identity assignments are reserved for exact S6 history replay.',
+        errorCode: 'preferred_identity_wrong_mode',
       };
     }
 
@@ -669,7 +684,7 @@ export class CommitCoordinator {
 
     // 3. Resolve identities atomically
     // Map of localRef/id -> resolved descriptor { isNew, assignedId, npc }
-    const idResolution = resolveIdentityBatch(identityProposals, workingState, this.admissionPolicy);
+    const idResolution = resolveIdentityBatch(identityProposals, workingState, this.admissionPolicy, identityOptions);
     if (!idResolution.valid) {
       // Atomic dependent failure: failed admission leaves no orphan mutation (C04)
       return {
@@ -1672,8 +1687,26 @@ export class CommitCoordinator {
     const nextRevision = currentRevision + 1;
     workingState.revision = nextRevision;
 
+    const rawIdentitySourceProvenance = sourceDependencies
+      .map((dependency) => dependency?.capturedProvenance)
+      .find((provenance) => provenance?.role === 'assistant') || null;
+    const identitySourceProvenance = rawIdentitySourceProvenance
+      ? Object.fromEntries(
+          Object.entries(rawIdentitySourceProvenance)
+            .filter(([, value]) => value !== null && value !== undefined),
+        )
+      : null;
     const checkpoint = createCheckpoint(workingState, {
       sourceDependencies,
+      historyBoundary,
+      identityAssignments: idResolution.assignedNpcs.map(({ localRef, assignedId, name, identityKind, aliases }) => ({
+        localRef,
+        assignedId,
+        name,
+        identityKind,
+        identityKey: buildIdentityReplayKey({ localRef, name, identityKind, aliases }),
+        ...(identitySourceProvenance ? { sourceProvenance: identitySourceProvenance } : {}),
+      })),
       writer,
       mode: operationMode,
       description: `Committed ${appliedSummary.length} NPC update(s) via ${writer}`,
@@ -1706,6 +1739,169 @@ export class CommitCoordinator {
   }
 
   /**
+   * Atomically publishes a fully reconstructed canonical story state (C11).
+   * Reconstruction is prepared off-storage through the normal parser/application
+   * path; this method is the single durable replacement boundary. Latest user
+   * authority is overlaid here so a stale reconstruction can never erase it.
+   */
+  async commitReconstruction({
+    reconstructedState,
+    expectedRevision,
+    historyBoundary = null,
+    sourceDependencies = [],
+    identityAssignments = [],
+    reason = 'Canonical story history reconstruction',
+  } = {}) {
+    if (!reconstructedState || typeof reconstructedState !== 'object' || Array.isArray(reconstructedState)) {
+      return { success: false, error: 'Reconstructed state must be an object.', errorCode: 'invalid_reconstructed_state' };
+    }
+    if (!Array.isArray(sourceDependencies) || !Array.isArray(identityAssignments)) {
+      return { success: false, error: 'Reconstruction dependencies and identity assignments must be arrays.', errorCode: 'invalid_reconstruction_metadata' };
+    }
+
+    const loaded = await this.storage.load();
+    if (!loaded?.state) {
+      return { success: false, error: 'Failed to load current state for reconstruction.', errorCode: 'reconstruction_load_failed' };
+    }
+    if (expectedRevision !== undefined && expectedRevision !== loaded.revision) {
+      return {
+        success: false,
+        conflict: true,
+        errorCode: 'storage_cas_conflict',
+        error: `Reconstruction expected revision ${expectedRevision}, current revision is ${loaded.revision}.`,
+      };
+    }
+
+    const latestState = loaded.state;
+    const workingState = cloneState(reconstructedState);
+    workingState.revision = loaded.revision + 1;
+    if (!workingState.history || !Array.isArray(workingState.history.checkpoints)) {
+      workingState.history = { checkpoints: [] };
+    }
+
+    // Manual deletion tombstones are user-owned and survive every story rollback.
+    workingState.tombstones = cloneState(latestState.tombstones || {});
+    const tombstonedIds = new Set(Object.keys(workingState.tombstones));
+    for (const tombstonedId of tombstonedIds) {
+      delete workingState.npcs?.[tombstonedId];
+    }
+    if (Array.isArray(workingState.pendingReview?.entries) && tombstonedIds.size > 0) {
+      workingState.pendingReview.entries = workingState.pendingReview.entries.filter(
+        (entry) => !tombstonedIds.has(entry?.targetId),
+      );
+    }
+
+    const valuesEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const preservedUserTargets = [];
+    for (const [npcId, npc] of Object.entries(workingState.npcs || {})) {
+      const latestNpc = latestState.npcs?.[npcId];
+      if (!latestNpc) continue;
+
+      // Locks do not own a story value, so replay already ran without them.
+      // Corrections do own their corrected values and are applied after replay.
+      npc.locks = cloneState(latestNpc.locks || {});
+      npc.manualCorrections = cloneState(latestNpc.manualCorrections || {});
+      npc.importance = latestNpc.importance;
+      npc.portrait = latestNpc.portrait;
+      for (const fieldName of Object.keys(CANONICAL_FIELDS)) {
+        const correction = npc.manualCorrections[fieldName];
+        const isLocked = npc.locks[fieldName] === true;
+        // A lock freezes the latest accepted value across reconstruction. An
+        // unlocked correction owns the value only while it is still current;
+        // a later accepted automatic value must not be rolled back to the old
+        // correction merely because the audit record is preserved.
+        const correctionStillCurrent = correction &&
+          Object.prototype.hasOwnProperty.call(correction, 'value') &&
+          valuesEqual(latestNpc[fieldName], correction.value);
+        if (isLocked || correctionStillCurrent) {
+          if (fieldName === 'relationshipEvaluation' && isLocked) {
+            npc.relationship = cloneState(latestNpc.relationship);
+          } else {
+            npc[fieldName] = cloneState(latestNpc[fieldName]);
+          }
+        }
+      }
+      if (npc.lifeState === 'dead') {
+        npc.present = false;
+        npc.activeInExchange = false;
+        npc.offscreenActivity = null;
+      }
+
+      // Field revisions never travel backwards. A reconstructed semantic change
+      // receives a fresh token; unchanged fields retain the latest token.
+      npc.fieldRevisions ||= {};
+      for (const fieldName of Object.keys(CANONICAL_FIELDS)) {
+        const latestRevision = Number.isInteger(latestNpc.fieldRevisions?.[fieldName])
+          ? latestNpc.fieldRevisions[fieldName]
+          : 1;
+        const rebuiltRevision = Number.isInteger(npc.fieldRevisions?.[fieldName])
+          ? npc.fieldRevisions[fieldName]
+          : 1;
+        npc.fieldRevisions[fieldName] = valuesEqual(npc[fieldName], latestNpc[fieldName])
+          ? Math.max(latestRevision, rebuiltRevision)
+          : Math.max(latestRevision, rebuiltRevision) + 1;
+      }
+
+      const observationIds = new Set((npc.development?.observations || []).map((observation) => observation?.id).filter(Boolean));
+      if (npc.development && Array.isArray(npc.development.acceptedSupport)) {
+        npc.development.acceptedSupport = npc.development.acceptedSupport
+          .filter((support) =>
+            (!Array.isArray(support.supportingObservationIds) ||
+              support.supportingObservationIds.every((id) => observationIds.has(id))) &&
+            CANONICAL_FIELDS[String(support.field || '').split('.')[0]]
+          )
+          .map((support) => ({
+            ...support,
+            fieldRevision: npc.fieldRevisions[String(support.field).split('.')[0]],
+          }));
+      }
+      preservedUserTargets.push(npcId);
+    }
+
+    const stateValidation = validateState(workingState);
+    if (!stateValidation.valid) {
+      return {
+        success: false,
+        errorCode: 'invalid_reconstructed_state',
+        error: `Reconstructed state failed validation: ${stateValidation.errors.join('; ')}`,
+      };
+    }
+
+    const checkpoint = createCheckpoint(workingState, {
+      sourceDependencies,
+      historyBoundary,
+      identityAssignments,
+      writer: WRITERS.RUNTIME,
+      mode: 'history_recovery',
+      description: reason,
+    });
+    const finalValidation = validateState(workingState);
+    if (!finalValidation.valid) {
+      return {
+        success: false,
+        errorCode: 'invalid_reconstruction_checkpoint',
+        error: `Reconstruction checkpoint failed validation: ${finalValidation.errors.join('; ')}`,
+      };
+    }
+
+    const saveResult = await this.storage.save(workingState, loaded.revision);
+    if (!saveResult.success) {
+      return {
+        success: false,
+        conflict: Boolean(saveResult.conflict),
+        errorCode: saveResult.conflict ? 'storage_cas_conflict' : 'reconstruction_persistence_failed',
+        error: saveResult.error || 'Reconstruction persistence failed.',
+      };
+    }
+    return {
+      success: true,
+      commitRevision: saveResult.revision,
+      checkpointId: checkpoint.id,
+      preservedUserTargets,
+    };
+  }
+
+  /**
    * Commits a validated S1 wire envelope (one-pass or development) directly.
    * Seamlessly bridges S1 validated envelopes with the S2 commit coordinator.
    *
@@ -1734,6 +1930,9 @@ export class CommitCoordinator {
     dedupKeys = [],
     pendingReviewEntries = [],
     pendingReviewResolutions = [],
+    historyBoundary = null,
+    identityOptions = {},
+    operationMode = writer,
   }) {
     if (!envelope || typeof envelope !== 'object') {
       return { success: false, error: 'Envelope must be an object.' };
@@ -2114,7 +2313,9 @@ export class CommitCoordinator {
       pendingReviewEntries,
       pendingReviewResolutions,
       exchangeContext,
-      operationMode: writer,
+      historyBoundary,
+      identityOptions,
+      operationMode,
     });
   }
 }

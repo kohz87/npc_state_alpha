@@ -522,7 +522,7 @@ ${TRAILER_TAG_CLOSE}`);
   adapter.destroy();
 });
 
-test('S3 Host: Committed swipe replacement is rejected and future normal turn after branch divergence is blocked', async () => {
+test('S6 Host: committed swipe replacement reconstructs canonical state and future turns remain writable', async () => {
   const host = new MockSillyTavernHost({ chatId: 'chat_swipe' });
   const interceptorKey = 'test_npc_state_alpha_interceptor_swipe';
   host.interceptorKey = interceptorKey;
@@ -611,30 +611,24 @@ ${TRAILER_TAG_CLOSE}`;
   host.chat[msgIdx].swipe_id = 1;
   await host.eventSource.emit(host.eventTypes.MESSAGE_RECEIVED, msgIdx, 'swipe');
 
-  // Replacement/regeneration at already committed position 1 must fail closed.
-  // Alpha state and revision remain strictly unchanged at revision 1.
-  // No second state mutation path, no alternate Charlie commit, no double relationship mutation.
+  // S6 reconstructs at the selected swipe. Bob's old relationship evidence
+  // disappears and Charlie becomes the only canonical admission.
   const state2 = await adapter.storage.load();
-  assert.equal(state2.revision, 1);
+  assert.ok(state2.revision > 1);
   const npcs = Object.values(state2.state.npcs);
   assert.equal(npcs.length, 1);
-  assert.equal(npcs[0].name, 'Bob');
-  assert.equal(npcs[0].relationship.trust, 2); // Exactly 2, no double mutation!
-  assert.ok(!npcs.some((n) => n.name === 'Charlie'), 'Alternative swipe must not mutate Alpha state');
-
-  const rejSwipe = adapter.diagnostics.entries.find(
-    (e) => e.type === DIAGNOSTIC_EVENT_TYPES.HOST_EVENT_REJECTED && e.reason?.includes('Replacement/regeneration')
-  );
-  assert.ok(rejSwipe);
+  assert.equal(npcs[0].name, 'Charlie');
+  assert.ok(!npcs.some((n) => n.name === 'Bob'));
+  assert.ok(adapter.diagnostics.entries.some((entry) => entry.type === DIAGNOSTIC_EVENT_TYPES.HISTORY_RECOVERY_COMMITTED));
 
   // Future normal turn after a branch divergence:
   // User sends next message in chat (turn 2)
   host.sendUserMessage('What drinks do you have?');
   await host.triggerGenerateInterceptor('normal');
 
-  // Committed branch divergence is detected read-only; inFlightRequest marked branchUnsafe
+  // The recovered branch is now the canonical request lineage.
   assert.ok(adapter.inFlightRequest);
-  assert.ok(adapter.inFlightRequest.branchUnsafe);
+  assert.equal(Boolean(adapter.inFlightRequest.branchUnsafe), false);
 
   // Assistant generates turn 2 message with valid trailer
   const turn2Text = `"We have ale and mead," replied the tavernkeeper.
@@ -649,7 +643,7 @@ ${TRAILER_TAG_OPEN}
       "identityKind": "named",
       "evidence": { "sourceRef": "current:assistant", "excerpt": "replied the tavernkeeper" },
       "present": true,
-      "activeInExchange": true
+      "activeInExchange": false
     }
   ]
 }
@@ -657,15 +651,10 @@ ${TRAILER_TAG_CLOSE}`;
 
   await host.receiveAssistantMessage(turn2Text);
 
-  // Fast mutation is blocked because earlier branch diverged without S6 history recovery!
   const state3 = await adapter.storage.load();
-  assert.equal(state3.revision, 1);
-  assert.ok(!Object.values(state3.state.npcs).some((n) => n.name === 'Tavernkeeper'));
-
-  const rejTurn2 = adapter.diagnostics.entries.find(
-    (e) => e.type === DIAGNOSTIC_EVENT_TYPES.HOST_EVENT_REJECTED && e.reason?.includes('branch divergence')
-  );
-  assert.ok(rejTurn2);
+  assert.ok(state3.revision > state2.revision);
+  assert.ok(Object.values(state3.state.npcs).some((n) => n.name === 'Tavernkeeper'));
+  assert.ok(!Object.values(state3.state.npcs).some((n) => n.name === 'Bob'));
 
   adapter.destroy();
 });
@@ -2902,7 +2891,7 @@ test('S3 Host Regression: Continuity projection includes canonical status/offscr
   assert.ok(!allowedSection.includes('"canonicalAppearance":'));
 });
 
-test('S3 Host Regression: Tampering an earlier user message after commit invalidates precedingLineage and marks branch unsafe / blocks fast mutation', async () => {
+test('S6 Host Regression: pre-generation history check reconstructs an offline lineage edit before the next turn', async () => {
   const host = new MockSillyTavernHost({ chatId: 'chat_lineage_tamper' });
   const interceptorKey = 'test_lineage_tamper_interceptor';
   host.interceptorKey = interceptorKey;
@@ -2955,31 +2944,25 @@ test('S3 Host Regression: Tampering an earlier user message after commit invalid
   host.sendUserMessage('Can we fix it?');
   await host.triggerGenerateInterceptor('normal');
 
-  // Next generation MUST mark inFlightRequest branchUnsafe due to precedingLineage mismatch
+  // S6 reconstructs the selected canonical history before capturing this request.
   assert.ok(adapter.inFlightRequest, 'inFlightRequest should be created');
-  assert.ok(adapter.inFlightRequest.branchUnsafe, 'inFlightRequest must be marked branchUnsafe');
-  assert.equal(adapter.inFlightRequest.branchUnsafe.reason, 'committed_source_preceding_lineage_changed');
-  assert.equal(adapter.inFlightRequest.branchUnsafe.position, 1);
+  assert.equal(Boolean(adapter.inFlightRequest.branchUnsafe), false);
+  const recoveredBeforeTurn2 = await adapter.storage.load();
+  assert.ok(recoveredBeforeTurn2.revision > state1.revision);
+  assert.equal(Object.values(recoveredBeforeTurn2.state.npcs).filter((npc) => npc.name === 'Bob').length, 1);
 
   // Turn 2: Assistant generates next turn with a new proposal
   const candidate2Text = `"Yes we can!" shouted Wendy.\n\n${TRAILER_TAG_OPEN}\n{"version":"1","proposals":[{"id":null,"localRef":"new:wendy","name":"Wendy","identityKind":"named","evidence":{"sourceRef":"current:assistant","excerpt":"shouted Wendy"},"present":true,"activeInExchange":false}]}\n${TRAILER_TAG_CLOSE}`;
 
   await host.receiveAssistantMessage(candidate2Text);
 
-  // Fast mutation must be blocked! State must remain at revision 1, Wendy must NOT be added
   const state2 = await adapter.storage.load();
-  assert.equal(state2.revision, 1);
+  assert.ok(state2.revision > recoveredBeforeTurn2.revision);
   const npcs2 = Object.values(state2.state.npcs);
-  assert.equal(npcs2.length, 1);
-  assert.equal(npcs2[0].name, 'Bob');
-  assert.ok(!npcs2.some((n) => n.name === 'Wendy'), 'Wendy must not be committed on diverged branch');
-
-  // Verify diagnostic record confirms branch divergence blocked fast mutation
-  const rejDiag = adapter.diagnostics.entries.find(
-    (e) => e.type === DIAGNOSTIC_EVENT_TYPES.HOST_EVENT_REJECTED &&
-      (e.reason?.includes('branch divergence') || e.reason?.includes('preceding_lineage_changed'))
-  );
-  assert.ok(rejDiag, 'Diagnostics must record fast mutation blocked due to branch divergence');
+  assert.equal(npcs2.length, 2);
+  assert.ok(npcs2.some((n) => n.name === 'Bob'));
+  assert.ok(npcs2.some((n) => n.name === 'Wendy'));
+  assert.ok(adapter.diagnostics.entries.some((entry) => entry.type === DIAGNOSTIC_EVENT_TYPES.HISTORY_RECOVERY_COMMITTED));
 
   adapter.destroy();
 });

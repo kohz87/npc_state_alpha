@@ -100,6 +100,11 @@ export function getActiveDevelopmentReview() {
   return activeDevelopmentReview;
 }
 
+/** Returns the S6 canonical story-history recovery coordinator. */
+export function getActiveHistoryRecovery() {
+  return activeAdapterInstance?.historyRecovery || null;
+}
+
 /** Returns the active UI controller instance. */
 export function getActiveUIController() {
   return activeUIController;
@@ -118,5 +123,6 @@ export default {
   init: initExtension,
   getActiveAdapter,
   getActiveDevelopmentReview,
+  getActiveHistoryRecovery,
   getActiveUIController,
 };

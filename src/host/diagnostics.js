@@ -29,6 +29,8 @@ export const DIAGNOSTIC_EVENT_TYPES = Object.freeze({
   DEVELOPMENT_PAUSED: 'development_paused',
   DEVELOPMENT_COALESCED: 'development_coalesced',
   DEVELOPMENT_YIELDED: 'development_yielded',
+  HISTORY_RECOVERY_COMMITTED: 'history_recovery_committed',
+  HISTORY_RECOVERY_FAILED: 'history_recovery_failed',
 });
 
 const DEFAULT_CAPACITY = 100;
@@ -79,6 +81,8 @@ export class DiagnosticsLedger {
       developmentPaused: 0,
       developmentCoalesced: 0,
       developmentYielded: 0,
+      historyRecoveryCommitted: 0,
+      historyRecoveryFailed: 0,
     };
   }
 
@@ -151,6 +155,12 @@ export class DiagnosticsLedger {
         break;
       case DIAGNOSTIC_EVENT_TYPES.DEVELOPMENT_YIELDED:
         this.counts.developmentYielded++;
+        break;
+      case DIAGNOSTIC_EVENT_TYPES.HISTORY_RECOVERY_COMMITTED:
+        this.counts.historyRecoveryCommitted++;
+        break;
+      case DIAGNOSTIC_EVENT_TYPES.HISTORY_RECOVERY_FAILED:
+        this.counts.historyRecoveryFailed++;
         break;
     }
 

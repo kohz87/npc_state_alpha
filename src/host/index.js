@@ -17,3 +17,4 @@ export * from './sillytavern-adapter.js';
 export * from './development-context.js';
 export * from './development-provider.js';
 export * from './development-queue.js';
+export * from './history-recovery.js';

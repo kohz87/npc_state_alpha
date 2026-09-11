@@ -11,6 +11,15 @@ import { validateOwnedSourceRecord } from '../contract/wire-schemas.js';
 
 let checkpointCounter = 0;
 
+// Preserve the first trustworthy base plus a bounded recent suffix. This keeps
+// recovery available without allowing snapshots to grow without limit.
+export const MAX_STORY_CHECKPOINTS = 128;
+
+// Any explicit state import/migration that cannot prove pre-import story history
+// establishes this neutral recovery boundary. Native restore and future legacy
+// adapters use the same marker; the core never needs format-specific modes.
+export const IMPORT_BASELINE_MODE = 'import_baseline';
+
 /**
  * Projects a source dependency into a compact checkpoint representation.
  * Persists source identity and captured provenance only; does NOT persist raw excerpt text (C11, Item 11).
@@ -82,12 +91,29 @@ export function createCheckpoint(state, metadata = {}) {
 
   // Compact dependency projection: do not persist raw excerpt text in checkpoints (Task 11)
   const compactDependencies = (metadata.sourceDependencies || []).map(toCompactDependency);
+  const priorCheckpoint = Array.isArray(state.history?.checkpoints)
+    ? state.history.checkpoints.at(-1)
+    : null;
+  // User/runtime commits can occur without a fresh story source. They inherit
+  // the last proven story boundary so checkpoint compaction cannot make a
+  // snapshot containing invalidated story effects appear independently valid.
+  const effectiveHistoryBoundary = metadata.historyBoundary || priorCheckpoint?.historyBoundary || null;
 
   const checkpoint = {
     id: checkpointId,
     commitRevision: state.revision,
     timestamp,
     sourceDependencies: compactDependencies,
+    // Exact canonical story boundary at the real commit time. Older S1-S5
+    // checkpoints may omit this field and are handled conservatively by S6.
+    historyBoundary: effectiveHistoryBoundary
+      ? cloneState(effectiveHistoryBoundary)
+      : null,
+    // Runtime identity assignments make NEW replay deterministic without using
+    // array position or semantic name similarity.
+    identityAssignments: Array.isArray(metadata.identityAssignments)
+      ? cloneState(metadata.identityAssignments)
+      : [],
     operation: {
       writer: metadata.writer || 'runtime',
       mode: metadata.mode || 'commit',
@@ -110,6 +136,26 @@ export function createCheckpoint(state, metadata = {}) {
   }
 
   state.history.checkpoints.push(checkpoint);
+  if (state.history.checkpoints.length > MAX_STORY_CHECKPOINTS) {
+    const firstTrustworthyBase = state.history.checkpoints[0];
+    const firstImportBaseline = state.history.checkpoints.find(
+      (candidate) => candidate?.operation?.mode === IMPORT_BASELINE_MODE,
+    );
+    const protectedCheckpoints = [firstTrustworthyBase];
+    if (firstImportBaseline && firstImportBaseline.id !== firstTrustworthyBase.id) {
+      protectedCheckpoints.push(firstImportBaseline);
+    }
+    const protectedIds = new Set(protectedCheckpoints.map((item) => item.id));
+    const suffixCapacity = MAX_STORY_CHECKPOINTS - protectedCheckpoints.length;
+    const recentSuffix = state.history.checkpoints
+      .filter((item) => !protectedIds.has(item.id))
+      .slice(-suffixCapacity);
+    const retainedIds = new Set([
+      ...protectedIds,
+      ...recentSuffix.map((item) => item.id),
+    ]);
+    state.history.checkpoints = state.history.checkpoints.filter((item) => retainedIds.has(item.id));
+  }
   return checkpoint;
 }
 
@@ -143,6 +189,8 @@ export function validateCheckpoint(checkpoint) {
     'commitRevision',
     'timestamp',
     'sourceDependencies',
+    'historyBoundary',
+    'identityAssignments',
     'operation',
     'npcs',
     'tombstones',
@@ -204,6 +252,49 @@ export function validateCheckpoint(checkpoint) {
         }
       } else {
         errors.push(`Checkpoint sourceDependencies[${dIdx}] must be a non-empty string or captured dependency object.`);
+      }
+    }
+  }
+
+  if (checkpoint.historyBoundary !== undefined && checkpoint.historyBoundary !== null) {
+    if (!checkpoint.historyBoundary || typeof checkpoint.historyBoundary !== 'object' || Array.isArray(checkpoint.historyBoundary)) {
+      errors.push("Checkpoint 'historyBoundary' must be null or an owned source record.");
+    } else {
+      const boundaryValidation = validateOwnedSourceRecord(checkpoint.historyBoundary);
+      if (!boundaryValidation.valid) {
+        errors.push(`Checkpoint historyBoundary invalid: ${boundaryValidation.error}`);
+      }
+    }
+  }
+
+  if (checkpoint.identityAssignments !== undefined) {
+    if (!Array.isArray(checkpoint.identityAssignments)) {
+      errors.push("Checkpoint 'identityAssignments' must be an array.");
+    } else {
+      const allowedAssignmentKeys = ['localRef', 'assignedId', 'name', 'identityKind', 'identityKey', 'sourceProvenance'];
+      for (let i = 0; i < checkpoint.identityAssignments.length; i++) {
+        const assignment = checkpoint.identityAssignments[i];
+        if (!assignment || typeof assignment !== 'object' || Array.isArray(assignment)) {
+          errors.push(`Checkpoint identityAssignments[${i}] must be an object.`);
+          continue;
+        }
+        for (const key of Object.keys(assignment)) {
+          if (!allowedAssignmentKeys.includes(key)) errors.push(`Checkpoint identityAssignments[${i}] contains unknown key '${key}'.`);
+        }
+        if (typeof assignment.localRef !== 'string' || assignment.localRef.trim() === '' ||
+            typeof assignment.assignedId !== 'string' || assignment.assignedId.trim() === '') {
+          errors.push(`Checkpoint identityAssignments[${i}] requires non-empty localRef and assignedId.`);
+        }
+        if (assignment.identityKey !== undefined &&
+            (typeof assignment.identityKey !== 'string' || assignment.identityKey.trim() === '')) {
+          errors.push(`Checkpoint identityAssignments[${i}].identityKey must be a non-empty string when supplied.`);
+        }
+        if (assignment.sourceProvenance !== undefined) {
+          const sourceValidation = validateOwnedSourceRecord(assignment.sourceProvenance);
+          if (!sourceValidation.valid) {
+            errors.push(`Checkpoint identityAssignments[${i}].sourceProvenance invalid: ${sourceValidation.error}`);
+          }
+        }
       }
     }
   }

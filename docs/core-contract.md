@@ -103,7 +103,7 @@ Accepted death immediately archives the dossier from living presence/activity wh
 
 Automatic dead -> alive is forbidden. Do not retain livingReturn as a supported automatic channel. Reject contradictory lifecycle structure rather than choosing a winning property. A return-looking scene involving a dead identity is reported as a conflict, not admitted as a duplicate person.
 
-User correction and rollback to a surviving pre-death history may restore alive. They are correction/history authorities, not narrative resurrection. A new complete rebuild must not quietly derive fresh death from arbitrary legacy Status text; legacy inconsistent records are handled in the explicit importer/reconciliation report.
+User correction and rollback to a surviving pre-death history may restore alive. They are correction/history authorities, not narrative resurrection. A new complete rebuild must not quietly derive fresh death from arbitrary legacy Status text; legacy inconsistent records are handled only by a verified compatibility adapter and its reconciliation report.
 
 **C07. Relationship authority**
 
@@ -240,15 +240,15 @@ Minimal UI: dossier list with presence/life state, separate current presentation
 
 Alpha and Beta may coexist as installed files, but only one automatic continuity/extraction owner may be active for a chat. Detect known competing enabled ownership where host capability permits and show a clear conflict; do not silently disable Beta or overwrite its data. Document the user-controlled switch.
 
-**C15. Compatibility and import boundary**
+**C15. Native portability and compatibility boundary**
 
-Initial Alpha supports its own v1 contracts. Do not advertise drop-in compatibility with Beta settings, APIs, embedded dialects or sidecar filenames.
+Alpha owns its canonical persistence model independently of every legacy format: namespace `npc_state_alpha.v1`, storage schema version 1, and the versioned native portable envelope `npc_state_alpha.native_state` format version 1. The native envelope contains one schema-valid canonical Alpha state snapshot and no compatibility interpretation. Native serialization is deterministic for the same state; parsing rejects unsupported format/envelope versions, unsupported state schema versions and malformed state before any persistence operation.
 
-Implement an explicit importer for the selected supported Beta schema/version range only after verifying real fixtures. It reads an exported copy into a fresh Alpha namespace, maps documented values/locks/user corrections/portraits where supported, and reports unsupported or inconsistent records. It does not mutate the source database or automatically activate Alpha.
+A native portable bundle preserves only evidence, checkpoints, relationship reasons, observations/support, tombstones, locks/corrections and other data that the canonical Alpha state actually contains. Creating or parsing a bundle never manufactures source provenance, message history, timestamps, checkpoints, observations/support, relationship explanations or other missing evidence. The bundle is portable state, not a replacement archive of authoritative SillyTavern narrative bytes. Applying a parsed bundle to a live chat is therefore an explicit restore/import operation: verify the required host source history when available, or establish a clearly labeled format-neutral import baseline when pre-import history cannot be proven. Rollback before such an untrusted imported-history boundary requires explicit recovery rather than invented reconstruction.
 
-Do not fabricate provenance, historical checkpoints or observed timestamps for imported fields. Establish a clearly labeled import baseline at the chosen current history boundary. Prevent pre-baseline accepted history from being automatically scored as new; rollback before a proven import baseline requires explicit recovery. Unsupported old timeline metadata is not silently declared trustworthy.
+Legacy compatibility is a narrow adapter boundary, not part of Alpha's runtime state model and not an Alpha-native S6 acceptance dependency. Beta or other legacy adapters may be implemented only in their assigned later compatibility/release stage against verified real serializer/export fixtures or equally authoritative schema evidence. Adapters must version-detect explicitly, reject unsupported or internally inconsistent formats safely, translate supported values/locks/user corrections/portraits into the existing Alpha canonical model, and report what could not be represented. They never mutate the source database, automatically activate Alpha, or become a second field/relationship/history authority.
 
-Retain only current functional tombstones and narrowly documented import adapters. No runtime legacy directory, wholesale Beta API facade or automatic migration at startup.
+A legacy adapter must never fabricate provenance, message history, relationship reasons, checkpoints, observations/support, observed timestamps or any other evidence absent from the source format. Unsupported old timeline metadata is not silently declared trustworthy. Lack of a valid legacy fixture does not block completion of Alpha-native history/recovery or native portability; it blocks only the corresponding compatibility claim. Retain only current functional tombstones and narrowly documented adapters. No runtime legacy directory, wholesale Beta API facade or automatic migration at startup.
 
 **C16. Diagnostics and performance**
 
@@ -281,7 +281,7 @@ Maintain source provenance/license notes in development documentation. Use bound
 
 **C18. Release acceptance**
 
-A release is usable only after the full user path, host capture, both update authorities, settings, persistence, history recovery, import behavior claimed for that release, and package loading are verified.
+A release is usable only after the full user path, host capture, both update authorities, settings, persistence, history recovery, native portability, any compatibility/import behavior actually claimed for that release, and package loading are verified.
 
 Required gates: syntax/contract consistency, behavioral tests, dependency reachability/package load, exact prompt examples through production paths, request-count/concurrency regressions, and prompt-size measurement. Add real host/provider smoke results when access exists; otherwise report those as unrun and do not imply mocks validate live performance.
 
