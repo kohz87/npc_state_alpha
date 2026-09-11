@@ -26,6 +26,17 @@ test('SettingsView: Development profile is a real select instead of free-form te
   assert.match(html, /Loading selected profile/);
 });
 
+test('SettingsView: routine Development defaults to low reasoning and dossier diagnostics default hidden', () => {
+  const view = new SettingsView({ getContext: () => settingsContext() });
+  const settings = view.loadSettings();
+  const html = view.render(settings);
+  assert.equal(settings.developmentReasoningEffort, 'low');
+  assert.equal(settings.showDossierDiagnostics, false);
+  assert.match(html, /Development reasoning effort/);
+  assert.match(html, /value="low" selected/);
+  assert.match(html, /Show dossier diagnostics/);
+});
+
 test('SettingsView: supported Connection Manager profiles populate selector and preserve selection', async () => {
   const context = settingsContext('profile-b');
   const select = {
@@ -111,17 +122,45 @@ test('UIController: Settings profile discovery uses the active Development provi
   assert.equal(result.profiles[0].id, 'p1');
 });
 
-test('DossierView: opened dossier uses portrait-first document plus bottom cast dock', () => {
+test('DossierView: compact default surface uses portrait-first layout and real relationship meters', () => {
   const npc = createDefaultNpcRecord('mirelle', 'Mirelle');
   npc.role = 'Waystation clerk';
   npc.currentPresentation = 'Ink-stained sleeves';
+  npc.activeInExchange = true;
+  npc.offscreenActivity = 'Sorting manifests';
+  npc.relationship.trust = 25;
   const html = new DossierView().render({ npcs: { mirelle: npc }, pendingReview: { entries: [] } }, 'mirelle');
   assert.match(html, /alpha-dossier-hero/);
   assert.match(html, /alpha-hero-media/);
   assert.match(html, /alpha-dossier-document/);
   assert.match(html, /alpha-cast-dock/);
   assert.match(html, /DOSSIER LIBRARY/);
-  assert.match(html, /Recheck Missing/);
-  assert.match(html, /Refresh Dossier/);
+  assert.match(html, /Attach Portrait/);
+  assert.match(html, /type="file"/);
+  assert.match(html, /alpha-rel-track/);
+  assert.match(html, /role="meter"/);
+  assert.match(html, /25\.00/);
   assert.match(html, /Ink-stained sleeves/);
+  assert.match(html, /Show Diagnostics/);
+  assert.doesNotMatch(html, />Exchange active</);
+  assert.doesNotMatch(html, />Current form ID</);
+  assert.doesNotMatch(html, />Development Status</);
+  assert.doesNotMatch(html, />Development Evidence</);
+});
+
+test('DossierView: dossier-local diagnostics are opt-in and reveal technical bookkeeping without changing state', () => {
+  const npc = createDefaultNpcRecord('mirelle', 'Mirelle');
+  npc.activeInExchange = true;
+  const html = new DossierView().render(
+    { npcs: { mirelle: npc }, pendingReview: { entries: [] } },
+    'mirelle',
+    {},
+    { showDiagnostics: true },
+  );
+  assert.match(html, /Hide Diagnostics/);
+  assert.match(html, />Technical State</);
+  assert.match(html, />Exchange active</);
+  assert.match(html, />Development Status</);
+  assert.match(html, />User Ownership</);
+  assert.match(html, />Development Evidence</);
 });
