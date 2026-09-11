@@ -6,7 +6,7 @@ import { CommitCoordinator } from '../src/runtime/commit-coordinator.js';
 import { DevelopmentReviewQueue } from '../src/host/development-queue.js';
 import { createDefaultNpcRecord, createInitialState, ALPHA_NAMESPACE } from '../src/state/schema.js';
 import { createCheckpoint } from '../src/state/checkpoints.js';
-import { computeContentFingerprint } from '../src/host/fingerprint.js';
+import { computeContentFingerprint } from '../src/host/content-hash.js';
 import { stripMachineTrailer } from '../src/runtime/source-resolver.js';
 import { getMessageSwipeId } from '../src/host/sillytavern-adapter.js';
 import { AUDIT_OPERATIONS, OPERATION_MASKS, validateFieldOutcome } from '../src/contract/audit-modes.js';

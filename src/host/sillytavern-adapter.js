@@ -37,7 +37,7 @@ import {
 } from '../runtime/commit-coordinator.js';
 import {
   computeContentFingerprint,
-} from './fingerprint.js';
+} from './content-hash.js';
 import {
   DiagnosticsLedger,
   DIAGNOSTIC_EVENT_TYPES,

@@ -19,7 +19,7 @@ import {
 } from '../runtime/source-resolver.js';
 import {
   computeContentFingerprint,
-} from './fingerprint.js';
+} from './content-hash.js';
 import {
   buildChatFingerprintIndex,
   buildPrecedingLineage,

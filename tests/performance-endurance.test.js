@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { stripMachineTrailer } from '../src/runtime/source-resolver.js';
-import { computeContentFingerprint } from '../src/host/fingerprint.js';
+import { computeContentFingerprint } from '../src/host/content-hash.js';
 import {
   SillyTavernAdapter,
   buildChatFingerprintIndex,

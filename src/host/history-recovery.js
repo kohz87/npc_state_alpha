@@ -16,7 +16,7 @@ import { MemoryStorageAdapter } from '../state/storage.js';
 import { CommitCoordinator } from '../runtime/commit-coordinator.js';
 import { buildIdentityReplayKey } from '../runtime/identity.js';
 import { stripMachineTrailer } from '../runtime/source-resolver.js';
-import { computeContentFingerprint } from './fingerprint.js';
+import { computeContentFingerprint } from './content-hash.js';
 import { DIAGNOSTIC_EVENT_TYPES } from './diagnostics.js';
 
 function roleOf(message) {

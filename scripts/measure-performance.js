@@ -20,7 +20,7 @@ import {
   analyzeStoryHistory,
   captureStoryHistoryBoundary,
 } from '../src/host/history-recovery.js';
-import { computeContentFingerprint } from '../src/host/fingerprint.js';
+import { computeContentFingerprint } from '../src/host/content-hash.js';
 import {
   createDefaultNpcRecord,
   createInitialState,

@@ -57,7 +57,7 @@ import {
 } from '../src/host/prompt-injector.js';
 import {
   computeContentFingerprint,
-} from '../src/host/fingerprint.js';
+} from '../src/host/content-hash.js';
 import {
   DiagnosticsLedger,
   DIAGNOSTIC_EVENT_TYPES,

@@ -25,7 +25,7 @@ import {
 } from './development-context.js';
 import { SillyTavernDevelopmentProvider } from './development-provider.js';
 import { DIAGNOSTIC_EVENT_TYPES } from './diagnostics.js';
-import { computeContentFingerprint } from './fingerprint.js';
+import { computeContentFingerprint } from './content-hash.js';
 import { buildPrecedingLineage, getMessageSwipeId } from './sillytavern-adapter.js';
 import { captureStoryHistoryBoundary } from './history-recovery.js';
 

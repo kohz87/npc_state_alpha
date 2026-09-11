@@ -28,7 +28,7 @@ import {
   SillyTavernDevelopmentProvider,
 } from '../src/host/development-provider.js';
 import { buildPrecedingLineage, getMessageSwipeId } from '../src/host/sillytavern-adapter.js';
-import { computeContentFingerprint } from '../src/host/fingerprint.js';
+import { computeContentFingerprint } from '../src/host/content-hash.js';
 import { MockSillyTavernHost } from './fixtures/host-harness.js';
 
 const NPC_ID = 'npc_elena';

@@ -9,7 +9,7 @@
  * - Deterministic Content Fingerprinting
  */
 
-export * from './fingerprint.js';
+export * from './content-hash.js';
 export * from './diagnostics.js';
 export * from './storage-adapter.js';
 export * from './prompt-injector.js';

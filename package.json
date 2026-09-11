@@ -1,6 +1,6 @@
 {
   "name": "npc_state_alpha",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Standalone SillyTavern NPC continuity extension",
   "type": "module",
   "engines": {

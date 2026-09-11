@@ -34,7 +34,7 @@
 
 ## Commands, Namespace & Version Decisions
 
-* **Package Version:** `0.1.0` declared in `package.json` (ES Module, Node >= 22.0.0, zero external runtime dependencies).
+* **Package Version:** `0.1.1` declared in `package.json` (ES Module, Node >= 22.0.0, zero external runtime dependencies).
 * **Runtime Namespace:** `npc_state_alpha.v1`
 * **Storage Schema Version:** `1` (integer)
 * **One-Pass Wire Version:** `1` (string)
@@ -42,7 +42,7 @@
 * **Test / Validation Commands:**
   * `npm test` — Executes the deterministic test runner using Node built-in `node --test tests/**/*.test.js`.
   * `npm run validate` — Executes `node scripts/validate.js` verifying module imports, C02 coverage, wire/settings versions, production examples, S2 runtime primitives, S3 host primitives, S4 Development primitives/settings, S5 UI/user commands/relationship mechanics/C14 owner gate, and S6 history/recovery plus Alpha-native portability/import-baseline primitives.
-  * `npm run package` — Executes `node scripts/package.js`, creating the browser runtime distribution in `dist/` plus deterministic `release/npc_state_alpha-0.1.0.zip` and SHA-256 sidecar without dev/test/doc/private files.
+  * `npm run package` — Executes `node scripts/package.js`, creating the browser runtime distribution in `dist/` plus deterministic `release/npc_state_alpha-0.1.1.zip` and SHA-256 sidecar without dev/test/doc/private files.
   * `npm run measure:prompts` — Executes the accepted S7 deterministic prompt-size/hash corpus.
   * `npm run measure:performance` — Executes the S9 deterministic local performance/endurance characterization harness with small/medium/large/stress tiers and integrated session coverage.
   * `git diff --check` — Required final whitespace gate.
@@ -262,3 +262,11 @@
 * **Current deterministic pre-documentation result:** `npm test` is **573/573 PASS** and S10 `npm run validate` is **0 errors**. Packaging reproducibility, clean packaged initialization, upgrade preservation, native portability, migration safety and installed-host evidence are all green. Final tests/validation/prompt/performance/package/diff-check are rerun after this documentation append before the single S10 commit.
 * **Findings status before final gate:** Fixed release defects are the pristine-checkout package-test dependency and parallel package-output race. Beta 0.5.38 incompatibility is an explicit unsupported-source limitation, not an Alpha defect. The lack of a second disposable SillyTavern profile action is an evidence limitation covered by deterministic clean-package initialization plus a real S9 -> S10 installed-host upgrade. No accepted Critical/High/Medium/Low finding remains before final gates.
 * **Publication boundary:** Canonical local `main` remains untouched. GitHub publication has **not** occurred yet. Only after final docs, all local gates, one S10 commit and clean-worktree verification will S10 perform a fresh remote-main/ancestry check and, if and only if fast-forward is proven, publish the exact accepted commit non-force to `kohz87/npc_state_alpha` `main`. No Opus, Gemini, Codex implementation, force push, rebase, reset, merge or production Beta data access is part of S10.
+
+## 0.1.1 — Content-hash module load compatibility
+
+* User-reported browser failure: `src/host/fingerprint.js` was rejected with `net::ERR_BLOCKED_BY_CLIENT`, preventing the ES module dependency graph from loading. The exact blocking product/rule is unavailable.
+* Renamed the module to `src/host/content-hash.js` and updated runtime imports/re-exports, test imports, and the performance harness. The SHA-256 implementation and exported function names are byte-for-byte unchanged, preserving stored source fingerprints and history identity. No old-path compatibility shim is shipped.
+* Application package/manifest version is 0.1.1. State, native portability, and model wire versions remain unchanged.
+* Validation uses the existing full deterministic suite, repository validation, prompt measurements, performance harness, and release packaging. User-browser filter behavior must be confirmed after updating and reloading; no live user chat/database is accessed.
+* Executed on Node 24.19.0: 573/573 tests PASS, repository validation 0 errors, prompt measurements PASS (16,073 Immediate / 19,053 Development chars), performance/endurance command PASS, packaging PASS, packaged root import PASS, and whitespace check PASS. Distribution and ZIP contain the renamed module with no reference to the former path.

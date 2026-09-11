@@ -6,6 +6,6 @@
   "generate_interceptor": "npc_state_alpha_generate_interceptor",
   "js": "index.js",
   "author": "NPC State Alpha Contributors",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Standalone SillyTavern NPC continuity extension"
 }
