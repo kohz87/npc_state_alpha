@@ -51,6 +51,45 @@ test('Development provider: profile listing fails visibly when Connection Manage
   assert.match(result.error, /profile listing/i);
 });
 
+test('Development provider: routine review defaults to low reasoning through supported host override payload', async () => {
+  let captured = null;
+  const provider = new SillyTavernDevelopmentProvider({
+    getContext: () => ({ extensionSettings: { npc_state_alpha: {} } }),
+    moduleLoader: async () => ({
+      ConnectionManagerRequestService: {
+        getProfile() { return { id: 'fast', model: 'gemini-3.7-flash-high' }; },
+        async sendRequest(...args) {
+          captured = args;
+          return { content: '{"version":"1"}', usage: { prompt_tokens: 100, completion_tokens: 20 } };
+        },
+      },
+    }),
+  });
+
+  const result = await provider.sendReview({ profileId: 'fast', prompt: 'review', maxTokens: 1600 });
+  assert.equal(result.text, '{"version":"1"}');
+  assert.equal(captured.length, 5);
+  assert.deepEqual(captured[4], { reasoning_effort: 'low' });
+  assert.equal(captured[2], 1600);
+});
+
+test('Development provider: auto reasoning leaves the selected profile/provider default untouched', async () => {
+  let override = null;
+  const provider = new SillyTavernDevelopmentProvider({
+    moduleLoader: async () => ({
+      ConnectionManagerRequestService: {
+        getProfile() { return { id: 'deep' }; },
+        async sendRequest(_id, _prompt, _maxTokens, _custom, payload) {
+          override = payload;
+          return { content: '{}' };
+        },
+      },
+    }),
+  });
+  await provider.sendReview({ profileId: 'deep', prompt: 'review', maxTokens: 1600, reasoningEffort: 'auto' });
+  assert.deepEqual(override, {});
+});
+
 test('Development provider: throwing SillyTavern profile lookup maps to development_profile_missing', async () => {
   let sendCalls = 0;
   const provider = new SillyTavernDevelopmentProvider({

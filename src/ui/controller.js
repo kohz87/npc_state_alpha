@@ -11,6 +11,8 @@ import { SettingsView } from './settings-view.js';
 import { DiagnosticsView } from './diagnostics-view.js';
 import { escapeHtml } from './dom-utils.js';
 import { ALPHA_UI_STYLES } from './styles.js';
+import { setPortrait } from '../runtime/user-commands.js';
+import { SillyTavernPortraitUploader } from '../host/portrait-upload.js';
 
 export class UIController {
   constructor(options = {}) {
@@ -19,12 +21,15 @@ export class UIController {
     this.coordinator = options.coordinator || this.adapter?.coordinator || null;
     this.developmentQueue = options.developmentQueue || this.adapter?.developmentReview || null;
     this.diagnostics = options.diagnostics || this.adapter?.diagnostics || null;
+    this.portraitUploader = options.portraitUploader || new SillyTavernPortraitUploader();
 
     this.dossierView = new DossierView({
       onSelect: (id) => this.selectNpc(id),
       onEdit: (id) => this.startEditing(id),
       onRecheckMissing: (id) => this.recheckMissing(id),
       onRefreshDossier: (id) => this.refreshDossier(id),
+      onPortraitFile: (id, file) => this.uploadPortrait(id, file),
+      onToggleDiagnostics: () => this.toggleDossierDiagnostics(),
     });
     this.dossierView.onFilterChanged = () => this.render();
     this.editor = new NpcEditor({
@@ -207,6 +212,38 @@ export class UIController {
   startEditing(id) { this.editingNpcId = id; this.render(); }
   showStatus(text, type = 'info') { this.statusMessage = { text: String(text), type }; this.render(); }
 
+  async uploadPortrait(id, file) {
+    if (!this._requireActiveChat()) return;
+    if (!id || !file || !this.coordinator || !this.storage) {
+      this.showStatus('Portrait upload is unavailable.', 'error');
+      return;
+    }
+    const npcName = this.cachedState?.npcs?.[id]?.name || id;
+    this.showStatus(`Uploading portrait for ${npcName}…`, 'info');
+    try {
+      const portrait = await this.portraitUploader.upload(file, { npcId: id, npcName });
+      const loaded = await this.storage.load();
+      if (!loaded.state?.npcs?.[id]) throw new Error(`NPC '${id}' no longer exists.`);
+      const result = await setPortrait(this.coordinator, {
+        npcId: id,
+        portrait,
+        expectedRevision: loaded.revision,
+      });
+      if (result?.success === false) throw new Error(result.error || 'Portrait update was rejected.');
+      this.showStatus(`Portrait updated for ${npcName}.`, 'success');
+      await this.reloadAndRender();
+    } catch (error) {
+      this.showStatus(`Portrait upload failed: ${error?.message || error}`, 'error');
+    }
+  }
+
+  toggleDossierDiagnostics() {
+    const current = this.settingsView.loadSettings();
+    const result = this.settingsView.saveSettings({ showDossierDiagnostics: !current.showDossierDiagnostics });
+    if (!result.success) return;
+    this.render();
+  }
+
   async reviewPending() { await this._runDevelopmentAction('Review pending', () => this.developmentQueue?.reviewPending?.()); }
   async retryFailed() { await this._runDevelopmentAction('Retry failed review', () => this.developmentQueue?.retryFailed?.()); }
   async recheckMissing(id) { await this._runDevelopmentAction('Recheck missing', () => this.developmentQueue?.recheckMissingDetails?.(id)); }
@@ -260,6 +297,7 @@ export class UIController {
     const devStatus = this.developmentQueue?.getStatus?.() || {};
     const ownershipConflict = this.adapter?.getOwnershipConflict?.() || null;
     const immediateFailure = this.adapter?.getImmediateFailure?.() || null;
+    const settings = this.settingsView.loadSettings();
     const pending = Array.isArray(this.cachedState?.pendingReview?.entries) ? this.cachedState.pendingReview.entries : [];
     const failedPending = pending.filter((entry) => ['failed', 'unavailable', 'deferred'].includes(entry?.metadata?.lastReviewStatus)).length;
     const devLabel = !hasChat ? 'No chat open' : ownershipConflict
@@ -267,11 +305,11 @@ export class UIController {
       : (devStatus.inFlight ? 'Running' : (failedPending ? `${failedPending} need attention` : (pending.length ? `${pending.length} pending` : 'Idle')));
 
     let content = '';
-    if (this.activeTab === 'settings') content = this.settingsView.render();
+    if (this.activeTab === 'settings') content = this.settingsView.render(settings);
     else if (this.activeTab === 'diagnostics') content = this.diagnosticsView.render();
     else if (!hasChat) content = '<div class="alpha-welcome"><div class="alpha-welcome-mark" aria-hidden="true">α</div><h3>Open a chat to get started</h3><p>NPC dossiers belong to the current conversation. Open a character or group chat in SillyTavern to view its NPCs.</p><button type="button" class="alpha-btn alpha-btn-primary alpha-open-settings">Configure settings</button></div>';
     else if (this.editingNpcId && this.cachedState?.npcs?.[this.editingNpcId]) content = this.editor.render(this.cachedState.npcs[this.editingNpcId], this.cachedRevision);
-    else content = this.dossierView.render(this.cachedState, this.selectedNpcId, devStatus);
+    else content = this.dossierView.render(this.cachedState, this.selectedNpcId, devStatus, { showDiagnostics: settings.showDossierDiagnostics });
 
     this.rootElement.innerHTML = `
       <section class="alpha-extension-panel" role="region" aria-label="NPC State Alpha">

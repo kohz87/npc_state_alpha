@@ -36,7 +36,7 @@ function memoryText(memory) {
 
 function relationText(rel) {
   const kind = rel?.relationship || rel?.relationKind || rel?.description || 'relationship';
-  return `${rel?.targetId || 'unknown target'}: ${kind}`;
+  return `${rel?.targetId || rel?.targetName || 'unknown target'}: ${kind}`;
 }
 
 function milestoneFor(rel, axis) {
@@ -57,18 +57,48 @@ function statusMeta(npc) {
   return { label: 'Offscreen', klass: 'status-offscreen' };
 }
 
+function currentAppearance(npc, forms) {
+  if (npc?.currentPresentation) return scalar(npc.currentPresentation);
+  const currentForm = forms.find((form) => form.formId === npc?.currentForm);
+  if (currentForm) return formText(currentForm);
+  return scalar(npc?.canonicalAppearance);
+}
+
+function relationshipMeter(rel, axis) {
+  const raw = Number(rel?.[axis] || 0);
+  const semanticScore = Math.max(-100, Math.min(100, Number.isFinite(raw) ? raw : 0));
+  const position = (semanticScore + 100) / 2;
+  const scoreText = Number.isFinite(raw) ? raw.toFixed(2) : '0.00';
+  const milestone = milestoneFor(rel, axis).replace(`${axis}:`, '');
+  return `
+    <div class="alpha-rel-meter-card">
+      <div class="alpha-rel-meter-head">
+        <span class="alpha-rel-meter-name">${escapeHtml(axis)}</span>
+        <span class="alpha-rel-meter-score">${escapeHtml(scoreText)}</span>
+      </div>
+      <div class="alpha-rel-track" role="meter" aria-label="${escapeHtml(axis)} relationship score" aria-valuemin="-100" aria-valuemax="100" aria-valuenow="${semanticScore}" title="Semantic meter: -100 to +100. Stored score: ${escapeHtml(scoreText)}">
+        <span class="alpha-rel-zero" aria-hidden="true"></span>
+        <span class="alpha-rel-marker" aria-hidden="true" style="left:${position}%"></span>
+      </div>
+      <div class="alpha-rel-scale" aria-hidden="true"><span>-100</span><span>0</span><span>+100</span></div>
+      <div class="alpha-rel-milestone">${escapeHtml(milestone)}</div>
+    </div>`;
+}
+
 export class DossierView {
   constructor(options = {}) {
     this.onSelect = options.onSelect || (() => {});
     this.onEdit = options.onEdit || (() => {});
     this.onRecheckMissing = options.onRecheckMissing || (() => {});
     this.onRefreshDossier = options.onRefreshDossier || (() => {});
+    this.onPortraitFile = options.onPortraitFile || (() => {});
+    this.onToggleDiagnostics = options.onToggleDiagnostics || (() => {});
     this.searchQuery = '';
     this.filterLifeState = 'all';
     this.filterPresence = 'all';
   }
 
-  render(state, selectedNpcId = null, queueStatus = {}) {
+  render(state, selectedNpcId = null, queueStatus = {}, viewOptions = {}) {
     const all = state?.npcs ? Object.values(state.npcs) : [];
     const pendingEntries = Array.isArray(state?.pendingReview?.entries) ? state.pendingReview.entries : [];
     const filtered = all
@@ -91,7 +121,7 @@ export class DossierView {
     return `
       <div class="alpha-dossier-library">
         <div class="alpha-dossier-stage">
-          ${selected ? this._renderDetail(selected, pendingEntries, queueStatus) : `
+          ${selected ? this._renderDetail(selected, pendingEntries, queueStatus, viewOptions) : `
             <div class="alpha-empty-detail">
               <div class="alpha-welcome-mark" aria-hidden="true">α</div>
               <h3>${all.length ? 'No matching dossiers' : 'No NPCs recorded yet'}</h3>
@@ -142,7 +172,8 @@ export class DossierView {
     }).join('');
   }
 
-  _renderDetail(npc, allPending, queueStatus) {
+  _renderDetail(npc, allPending, queueStatus, viewOptions = {}) {
+    const showDiagnostics = viewOptions.showDiagnostics === true;
     const pending = allPending.filter((entry) => entry.targetId === npc.id);
     const receipts = Array.isArray(npc.development?.reviewReceipts) ? npc.development.reviewReceipts : [];
     const lastReceipt = [...receipts].reverse().find((receipt) => ['reviewed', 'reviewed_no_proposals'].includes(receipt.status)) || null;
@@ -162,14 +193,7 @@ export class DossierView {
     const rel = npc.relationship || {};
     const scoringHistory = Array.isArray(rel.scoringHistory) ? rel.scoringHistory : [];
     const { label: statusLabel, klass: statusKlass } = statusMeta(npc);
-
-    const axes = RELATIONSHIP_AXES.map((axis) => `
-      <div class="alpha-axis-card">
-        <div class="alpha-axis-name">${axis.toUpperCase()}</div>
-        <div class="alpha-axis-value">${Number(rel[axis] || 0).toFixed(2)}</div>
-        <div class="alpha-axis-milestone">${escapeHtml(milestoneFor(rel, axis))}</div>
-        <div class="alpha-axis-progress">fraction ${Number(rel.progress?.[axis] || 0).toFixed(2)}</div>
-      </div>`).join('');
+    const axes = RELATIONSHIP_AXES.map((axis) => relationshipMeter(rel, axis)).join('');
 
     const history = scoringHistory.length
       ? `<ul class="alpha-history-list">${scoringHistory.slice(-5).map((item) => {
@@ -181,6 +205,42 @@ export class DossierView {
     const heroPortrait = npc.portrait
       ? `<img class="alpha-hero-portrait" src="${escapeHtml(npc.portrait)}" alt="${escapeHtml(npc.name)}" />`
       : `<div class="alpha-hero-placeholder"><span>${escapeHtml(String(npc.name || '?').slice(0, 1).toUpperCase())}</span></div>`;
+
+    const technicalDiagnostics = showDiagnostics ? `
+      <div class="alpha-section alpha-diagnostic-section">
+        <h4 class="alpha-section-title">Technical State</h4>
+        <div class="alpha-grid-2 alpha-fact-grid">
+          <div><strong>Stable NPC ID</strong><span>${escapeHtml(npc.id)}</span></div>
+          <div><strong>Exchange active</strong><span>${npc.activeInExchange ? 'Yes' : 'No'}</span></div>
+          <div><strong>Current form ID</strong><span>${escapeHtml(currentForm?.formId || scalar(npc.currentForm, 'None'))}</span></div>
+          <div><strong>Offscreen activity</strong><span>${escapeHtml(scalar(npc.offscreenActivity, 'None recorded'))}</span></div>
+        </div>
+      </div>
+
+      <div class="alpha-section alpha-diagnostic-section">
+        <h4 class="alpha-section-title">Development Status</h4>
+        <div class="alpha-grid-2 alpha-fact-grid">
+          <div><strong>Status</strong><span>${escapeHtml(developmentLabel(pending, queueStatus))}</span></div>
+          <div><strong>Pending scopes</strong><span>${pending.length}</span></div>
+          <div><strong>Last successful review</strong><span>${escapeHtml(lastReceipt?.committedAt || 'None yet')}</span></div>
+          <div><strong>Last reviewed scope</strong><span>${lastReceipt ? `${lastReceipt.sourceScope?.length || 0} owned source(s)${lastReceipt.restricted ? `, ${lastReceipt.fieldSubset?.length || 0} field(s)` : ''}` : 'None yet'}</span></div>
+        </div>
+        ${pending.length ? `<div class="alpha-field-block"><div class="alpha-field-label">Pending state</div><div class="alpha-field-val">${pending.map((entry) => escapeHtml(entry?.metadata?.lastReviewStatus || 'pending')).join(', ')}</div></div>` : ''}
+      </div>
+
+      <div class="alpha-section alpha-diagnostic-section">
+        <h4 class="alpha-section-title">User Ownership</h4>
+        <div><strong>Locked fields:</strong> ${lockedFields.length ? lockedFields.map(escapeHtml).join(', ') : 'None'}</div>
+        <div><strong>Manual corrections:</strong> ${corrections.length}</div>
+        ${corrections.length ? `<ul class="alpha-history-list">${corrections.slice(-5).map(([field, record]) => `<li><strong>${escapeHtml(field)}</strong>: ${escapeHtml(record?.reason || 'user correction')} · ${escapeHtml(record?.correctedAt || '')}</li>`).join('')}</ul>` : ''}
+      </div>
+
+      <div class="alpha-section alpha-observations-section alpha-diagnostic-section">
+        <h4 class="alpha-section-title">Development Evidence</h4>
+        <div class="alpha-help-text">Observations below are review evidence. They are not presented as established traits unless a durable field was separately committed.</div>
+        ${observations.length ? observations.slice(-8).map((obs) => `<div class="alpha-obs-item"><div class="alpha-obs-header"><span class="alpha-obs-field">${escapeHtml(obs.field)}</span><span>${escapeHtml(obs.disposition?.role || 'tentative')}</span><span>${escapeHtml(obs.source?.sourceRef || '')}</span></div><div class="alpha-obs-body">${escapeHtml(obs.observation || '')}</div></div>`).join('') : '<div class="alpha-field-val">No retained observations.</div>'}
+        <div class="alpha-help-text">Accepted support links: ${support.length}</div>
+      </div>` : '';
 
     return `
       <div class="alpha-dossier-spread">
@@ -199,6 +259,8 @@ export class DossierView {
             </div>
           </div>
           <div class="alpha-hero-actions">
+            <input type="file" class="alpha-portrait-file" data-npc-id="${escapeHtml(npc.id)}" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+            <label class="alpha-btn alpha-btn-secondary alpha-btn-portrait" tabindex="0">${npc.portrait ? 'Change Portrait' : 'Attach Portrait'}<input type="file" class="alpha-portrait-file alpha-portrait-file-inline" data-npc-id="${escapeHtml(npc.id)}" accept="image/png,image/jpeg,image/webp,image/gif" /></label>
             <button type="button" class="alpha-btn alpha-btn-primary alpha-btn-edit" data-npc-id="${escapeHtml(npc.id)}">Edit</button>
             <button type="button" class="alpha-btn alpha-btn-secondary alpha-btn-recheck" data-npc-id="${escapeHtml(npc.id)}">Recheck Missing</button>
             <button type="button" class="alpha-btn alpha-btn-secondary alpha-btn-refresh" data-npc-id="${escapeHtml(npc.id)}">Refresh Dossier</button>
@@ -207,29 +269,20 @@ export class DossierView {
 
         <article class="alpha-dossier-document">
           <div class="alpha-dossier-document-head">
-            <div><span class="alpha-kicker">CANONICAL CONTINUITY RECORD</span><div class="alpha-npc-subtitle">${escapeHtml(npc.id)} · ${escapeHtml(npc.lifeState)}</div></div>
-            <span class="alpha-dev-status">${escapeHtml(developmentLabel(pending, queueStatus))}</span>
+            <div><span class="alpha-kicker">CANONICAL CONTINUITY RECORD</span><div class="alpha-npc-subtitle">${escapeHtml([npc.role, npc.species].filter(Boolean).join(' · ') || npc.lifeState)}</div></div>
+            <button type="button" class="alpha-btn alpha-btn-secondary alpha-btn-toggle-diagnostics" aria-pressed="${showDiagnostics ? 'true' : 'false'}">${showDiagnostics ? 'Hide Diagnostics' : 'Show Diagnostics'}</button>
           </div>
 
           <div class="alpha-section">
-            <h4 class="alpha-section-title">Live State</h4>
+            <h4 class="alpha-section-title">Current</h4>
             <div class="alpha-grid-2 alpha-fact-grid">
-              <div><strong>Presence</strong><span>${npc.lifeState === 'dead' ? 'Dead / archived from living presence' : (npc.present ? 'Present' : 'Offscreen')}</span></div>
-              <div><strong>Exchange active</strong><span>${npc.activeInExchange ? 'Yes' : 'No'}</span></div>
               <div><strong>Mood</strong><span>${escapeHtml(scalar(npc.mood))}</span></div>
               <div><strong>Location</strong><span>${escapeHtml(scalar(npc.location))}</span></div>
               <div><strong>Goal</strong><span>${escapeHtml(scalar(npc.goal))}</span></div>
-              <div><strong>Status</strong><span>${escapeHtml(scalar(npc.status))}</span></div>
-              <div><strong>Current form</strong><span>${escapeHtml(currentForm ? (currentForm.label || currentForm.name || currentForm.formId) : scalar(npc.currentForm, 'Unresolved / not selected'))}</span></div>
-              <div><strong>Offscreen activity</strong><span>${escapeHtml(scalar(npc.offscreenActivity, 'None recorded'))}</span></div>
+              <div><strong>Activity / condition</strong><span>${escapeHtml(scalar(npc.status))}</span></div>
+              <div class="alpha-current-appearance"><strong>Current appearance</strong><span>${escapeHtml(currentAppearance(npc, forms))}</span></div>
+              ${npc.present !== true && npc.offscreenActivity ? `<div><strong>Offscreen activity</strong><span>${escapeHtml(scalar(npc.offscreenActivity))}</span></div>` : ''}
             </div>
-          </div>
-
-          <div class="alpha-section">
-            <h4 class="alpha-section-title">Presentation vs Durable Appearance</h4>
-            <div class="alpha-field-block"><div class="alpha-field-label">Current Presentation (Immediate)</div><div class="alpha-field-val">${escapeHtml(scalar(npc.currentPresentation))}</div></div>
-            <div class="alpha-field-block"><div class="alpha-field-label">Canonical Appearance (Development)</div><div class="alpha-field-val">${escapeHtml(scalar(npc.canonicalAppearance))}</div></div>
-            <div class="alpha-field-block"><div class="alpha-field-label">Established Forms</div><div class="alpha-field-val">${forms.length ? forms.map((form) => escapeHtml(formText(form))).join('<br>') : 'None established'}</div></div>
           </div>
 
           <div class="alpha-section">
@@ -239,6 +292,8 @@ export class DossierView {
               <div><strong>Actual age</strong><span>${escapeHtml(scalar(npc.actualAge))}</span></div><div><strong>Apparent age</strong><span>${escapeHtml(scalar(npc.apparentAge))}</span></div>
               <div><strong>Birthday</strong><span>${escapeHtml(scalar(npc.birthday))}</span></div><div><strong>Importance</strong><span>${escapeHtml(scalar(npc.importance, 'Unset'))}</span></div>
             </div>
+            <div class="alpha-field-block"><div class="alpha-field-label">Canonical appearance</div><div class="alpha-field-val">${escapeHtml(scalar(npc.canonicalAppearance))}</div></div>
+            ${forms.length ? `<div class="alpha-field-block"><div class="alpha-field-label">Established forms</div><div class="alpha-field-val">${forms.map((form) => escapeHtml(formText(form))).join('<br>')}</div></div>` : ''}
             <div class="alpha-field-block"><div class="alpha-field-label">Background</div><div class="alpha-field-val">${escapeHtml(scalar(npc.background))}</div></div>
             <div class="alpha-field-block"><div class="alpha-field-label">Personality</div><div class="alpha-field-val">${escapeHtml(personalityText(npc.personality))}</div></div>
             <div class="alpha-field-block"><div class="alpha-field-label">Behavioral profile</div><div class="alpha-field-val">${escapeHtml(scalar(npc.behavioralProfile))}</div></div>
@@ -250,35 +305,12 @@ export class DossierView {
 
           <div class="alpha-section">
             <h4 class="alpha-section-title">Relationship Toward Player</h4>
-            <div class="alpha-field-block"><div class="alpha-field-label">Development Dynamic</div><div class="alpha-field-val">${escapeHtml(scalar(npc.relationshipDynamic))}</div></div>
-            <div class="alpha-axes-grid">${axes}</div>
-            <div class="alpha-field-block"><div class="alpha-field-label">Recent scored shifts</div>${history}</div>
+            <div class="alpha-relationship-meters">${axes}</div>
+            <div class="alpha-field-block"><div class="alpha-field-label">Current dynamic</div><div class="alpha-field-val">${escapeHtml(scalar(npc.relationshipDynamic, 'No established relationship summary.'))}</div></div>
+            ${showDiagnostics ? `<div class="alpha-field-block"><div class="alpha-field-label">Recent scored shifts</div>${history}</div>` : ''}
           </div>
 
-          <div class="alpha-section">
-            <h4 class="alpha-section-title">Development Status</h4>
-            <div class="alpha-grid-2 alpha-fact-grid">
-              <div><strong>Status</strong><span>${escapeHtml(developmentLabel(pending, queueStatus))}</span></div>
-              <div><strong>Pending scopes</strong><span>${pending.length}</span></div>
-              <div><strong>Last successful review</strong><span>${escapeHtml(lastReceipt?.committedAt || 'None yet')}</span></div>
-              <div><strong>Last reviewed scope</strong><span>${lastReceipt ? `${lastReceipt.sourceScope?.length || 0} owned source(s)${lastReceipt.restricted ? `, ${lastReceipt.fieldSubset?.length || 0} field(s)` : ''}` : 'None yet'}</span></div>
-            </div>
-            ${pending.length ? `<div class="alpha-field-block"><div class="alpha-field-label">Pending state</div><div class="alpha-field-val">${pending.map((entry) => escapeHtml(entry?.metadata?.lastReviewStatus || 'pending')).join(', ')}</div></div>` : ''}
-          </div>
-
-          <div class="alpha-section">
-            <h4 class="alpha-section-title">User Ownership</h4>
-            <div><strong>Locked fields:</strong> ${lockedFields.length ? lockedFields.map(escapeHtml).join(', ') : 'None'}</div>
-            <div><strong>Manual corrections:</strong> ${corrections.length}</div>
-            ${corrections.length ? `<ul class="alpha-history-list">${corrections.slice(-5).map(([field, record]) => `<li><strong>${escapeHtml(field)}</strong>: ${escapeHtml(record?.reason || 'user correction')} · ${escapeHtml(record?.correctedAt || '')}</li>`).join('')}</ul>` : ''}
-          </div>
-
-          <div class="alpha-section alpha-observations-section">
-            <h4 class="alpha-section-title">Development Evidence</h4>
-            <div class="alpha-help-text">Observations below are review evidence. They are not presented as established traits unless a durable field was separately committed.</div>
-            ${observations.length ? observations.slice(-8).map((obs) => `<div class="alpha-obs-item"><div class="alpha-obs-header"><span class="alpha-obs-field">${escapeHtml(obs.field)}</span><span>${escapeHtml(obs.disposition?.role || 'tentative')}</span><span>${escapeHtml(obs.source?.sourceRef || '')}</span></div><div class="alpha-obs-body">${escapeHtml(obs.observation || '')}</div></div>`).join('') : '<div class="alpha-field-val">No retained observations.</div>'}
-            <div class="alpha-help-text">Accepted support links: ${support.length}</div>
-          </div>
+          ${technicalDiagnostics}
         </article>
       </div>`;
   }
@@ -306,5 +338,11 @@ export class DossierView {
       const button = container?.querySelector(selector);
       button?.addEventListener('click', () => handler(button.getAttribute('data-npc-id')));
     }
+    container?.querySelector('.alpha-btn-toggle-diagnostics')?.addEventListener('click', () => this.onToggleDiagnostics());
+    container?.querySelectorAll('.alpha-portrait-file').forEach((input) => input.addEventListener('change', () => {
+      const file = input.files?.[0] || null;
+      if (file) this.onPortraitFile(input.getAttribute('data-npc-id'), file);
+      input.value = '';
+    }));
   }
 }

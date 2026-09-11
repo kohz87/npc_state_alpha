@@ -58,17 +58,24 @@ export const ALPHA_UI_STYLES = `
 #npc-state-alpha-root textarea { resize: vertical; line-height: 1.55; }
 #npc-state-alpha-root input::placeholder,
 #npc-state-alpha-root textarea::placeholder { color: var(--alpha-muted); opacity: .72; }
-#npc-state-alpha-root button {
+#npc-state-alpha-root button,
+#npc-state-alpha-root label.alpha-btn {
   appearance: none;
   cursor: pointer;
   min-height: 36px;
   padding: 7px 12px;
   line-height: 1.3;
   font-weight: 600;
+  color: var(--alpha-text);
   background: rgba(255, 255, 255, .055);
+  border: 1px solid var(--alpha-line);
+  border-radius: 8px;
+  box-shadow: none;
   white-space: normal;
+  text-align: center;
 }
-#npc-state-alpha-root button:hover:not(:disabled) {
+#npc-state-alpha-root button:hover:not(:disabled),
+#npc-state-alpha-root label.alpha-btn:hover {
   background: rgba(216, 190, 145, .11);
   border-color: var(--alpha-line-strong);
 }
@@ -76,7 +83,7 @@ export const ALPHA_UI_STYLES = `
   opacity: .48;
   cursor: not-allowed;
 }
-#npc-state-alpha-root :is(button, input, select, textarea, a):focus-visible {
+#npc-state-alpha-root :is(button, input, select, textarea, a, label.alpha-btn):focus-visible {
   outline: 2px solid var(--alpha-gold);
   outline-offset: 2px;
 }
@@ -307,7 +314,8 @@ export const ALPHA_UI_STYLES = `
   border-top: 1px solid rgba(216, 190, 145, .12);
   background: color-mix(in srgb, var(--alpha-bg) 90%, black 10%);
 }
-#npc-state-alpha-root .alpha-hero-actions .alpha-btn-edit { grid-column: 1 / -1; }
+#npc-state-alpha-root .alpha-btn-portrait { display: grid; place-items: center; position: relative; overflow: hidden; }
+#npc-state-alpha-root .alpha-btn-portrait input[type="file"] { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; padding: 0; min-height: 0; }
 #npc-state-alpha-root .alpha-dossier-document {
   min-width: 0;
   min-height: 0;
@@ -324,6 +332,7 @@ export const ALPHA_UI_STYLES = `
   padding-bottom: 12px;
   border-bottom: 1px solid var(--alpha-line);
 }
+#npc-state-alpha-root .alpha-dossier-document-head .alpha-btn-toggle-diagnostics { min-height: 30px; padding: 4px 9px; font-size: .72rem; color: var(--alpha-muted); }
 #npc-state-alpha-root .alpha-npc-subtitle,
 #npc-state-alpha-root .alpha-revision-tag { color: var(--alpha-muted); font-size: .77rem; overflow-wrap: anywhere; }
 #npc-state-alpha-root .alpha-section,
@@ -335,6 +344,7 @@ export const ALPHA_UI_STYLES = `
   border-radius: 10px;
   background: var(--alpha-surface);
 }
+#npc-state-alpha-root .alpha-diagnostic-section { border-style: dashed; background: rgba(0, 0, 0, .1); }
 #npc-state-alpha-root .alpha-section-title,
 #npc-state-alpha-root .alpha-group-title,
 #npc-state-alpha-root .alpha-section-heading {
@@ -352,6 +362,7 @@ export const ALPHA_UI_STYLES = `
   border-radius: 7px;
   background: rgba(255, 255, 255, .028);
 }
+#npc-state-alpha-root .alpha-current-appearance { grid-column: 1 / -1; }
 #npc-state-alpha-root .alpha-fact-grid > div > strong { color: var(--alpha-muted); font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
 #npc-state-alpha-root .alpha-field-block { margin-top: 13px; }
 #npc-state-alpha-root .alpha-field-label,
@@ -360,6 +371,39 @@ export const ALPHA_UI_STYLES = `
 #npc-state-alpha-root .alpha-field-label { margin-bottom: 4px; font-weight: 650; }
 #npc-state-alpha-root .alpha-field-val,
 #npc-state-alpha-root .alpha-section { overflow-wrap: anywhere; }
+
+/* Relationship meters use the long-standing semantic -100..+100 scale.
+   Stored Alpha scores may retain additional configured headroom; the label shows
+   the exact stored value while the marker clamps only for this visual scale. */
+#npc-state-alpha-root .alpha-relationship-meters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 5px 0 13px;
+}
+#npc-state-alpha-root .alpha-rel-meter-card {
+  min-width: 0;
+  padding: 10px 11px 8px;
+  border: 1px solid rgba(216, 190, 145, .15);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .15);
+}
+#npc-state-alpha-root .alpha-rel-meter-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+#npc-state-alpha-root .alpha-rel-meter-name { color: var(--alpha-muted); font-size: .69rem; letter-spacing: .07em; text-transform: uppercase; }
+#npc-state-alpha-root .alpha-rel-meter-score { color: var(--alpha-gold-soft); font-family: Georgia, "Times New Roman", serif; font-size: 1.1rem; font-weight: 600; }
+#npc-state-alpha-root .alpha-rel-track {
+  position: relative;
+  height: 9px;
+  margin-top: 7px;
+  border: 1px solid rgba(216, 190, 145, .24);
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(188, 93, 105, .32), rgba(255, 255, 255, .07) 50%, rgba(111, 176, 140, .32));
+}
+#npc-state-alpha-root .alpha-rel-zero { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: rgba(232, 222, 198, .48); }
+#npc-state-alpha-root .alpha-rel-marker { position: absolute; top: 50%; width: 12px; height: 12px; transform: translate(-50%, -50%); border: 2px solid var(--alpha-gold-soft); border-radius: 999px; background: color-mix(in srgb, var(--alpha-bg) 82%, black 18%); box-shadow: 0 0 0 2px rgba(0, 0, 0, .3); }
+#npc-state-alpha-root .alpha-rel-scale { display: flex; justify-content: space-between; margin-top: 3px; color: var(--alpha-muted); font-size: .58rem; opacity: .72; }
+#npc-state-alpha-root .alpha-rel-milestone { margin-top: 2px; color: var(--alpha-muted); font-size: .68rem; text-align: right; text-transform: capitalize; }
+
 #npc-state-alpha-root .alpha-axes-grid,
 #npc-state-alpha-root .alpha-diag-stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0 14px; }
 #npc-state-alpha-root .alpha-axis-card,
@@ -552,10 +596,10 @@ export const ALPHA_UI_STYLES = `
   #npc-state-alpha-root .alpha-dossier-hero { grid-template-rows: minmax(0, 1fr) auto; border-right: 0; border-bottom: 1px solid var(--alpha-line); }
   #npc-state-alpha-root .alpha-hero-caption { padding: 65px 16px 14px; }
   #npc-state-alpha-root .alpha-hero-caption h2 { font-size: 1.55rem; }
-  #npc-state-alpha-root .alpha-hero-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 6px; }
-  #npc-state-alpha-root .alpha-hero-actions .alpha-btn-edit { grid-column: auto; }
-  #npc-state-alpha-root .alpha-hero-actions button { min-height: 34px; padding: 5px 6px; font-size: .72rem; }
+  #npc-state-alpha-root .alpha-hero-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 6px; }
+  #npc-state-alpha-root .alpha-hero-actions :is(button, label.alpha-btn) { min-height: 34px; padding: 5px 6px; font-size: .72rem; }
   #npc-state-alpha-root .alpha-dossier-document { padding: 14px 12px 26px; }
+  #npc-state-alpha-root .alpha-relationship-meters { grid-template-columns: minmax(0, 1fr); }
   #npc-state-alpha-root .alpha-cast-dock { min-height: 150px; padding: 7px 8px 9px; }
   #npc-state-alpha-root .alpha-cast-dock-head { align-items: flex-start; flex-direction: column; gap: 5px; }
   #npc-state-alpha-root .alpha-filter-bar { width: 100%; }
@@ -564,6 +608,7 @@ export const ALPHA_UI_STYLES = `
   #npc-state-alpha-root .alpha-setting-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   #npc-state-alpha-root .alpha-switch-label { justify-self: start; }
   #npc-state-alpha-root .alpha-grid-2 { grid-template-columns: minmax(0, 1fr); }
+  #npc-state-alpha-root .alpha-current-appearance { grid-column: auto; }
   #npc-state-alpha-root .alpha-settings-container,
   #npc-state-alpha-root .alpha-diagnostics-container,
   #npc-state-alpha-root .alpha-editor-container { padding: 14px 12px 26px; }

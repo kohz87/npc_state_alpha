@@ -18,4 +18,5 @@ export * from './generation-interceptor-bridge.js';
 export * from './development-context.js';
 export * from './development-provider.js';
 export * from './development-queue.js';
+export * from './portrait-upload.js';
 export * from './history-recovery.js';

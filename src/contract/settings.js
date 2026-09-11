@@ -19,6 +19,8 @@ export const DEVELOPMENT_MAX_BATCH_EXCHANGES = 6;
 export const DEVELOPMENT_DEFAULT_RESPONSE_LIMIT = 1600;
 export const DEVELOPMENT_MIN_RESPONSE_LIMIT = 128;
 export const DEVELOPMENT_MAX_RESPONSE_LIMIT = 32768;
+export const DEVELOPMENT_REASONING_EFFORTS = Object.freeze(['auto', 'low', 'medium', 'high']);
+export const DEVELOPMENT_DEFAULT_REASONING_EFFORT = 'low';
 
 export const ROUTINE_DOSSIER_BUDGET_MIN = 1;
 export const ROUTINE_DOSSIER_BUDGET_MAX = 20;
@@ -52,7 +54,9 @@ export const ALPHA_SETTINGS_DEFAULTS = Object.freeze({
   developmentCadence: 3,
   developmentConnectionProfile: null,
   developmentResponseLimit: DEVELOPMENT_DEFAULT_RESPONSE_LIMIT,
+  developmentReasoningEffort: DEVELOPMENT_DEFAULT_REASONING_EFFORT,
   routineDossierDetailBudget: 'auto',
+  showDossierDiagnostics: false,
   relationshipScoreCap: RELATIONSHIP_DEFAULT_SCORE_CAP,
   relationshipInertia: RELATIONSHIP_DEFAULT_INERTIA,
   relationshipHistoryLimit: RELATIONSHIP_DEFAULT_HISTORY_LIMIT,
@@ -130,11 +134,20 @@ export function validateAlphaSettings(input, { partial = true } = {}) {
   if (Object.prototype.hasOwnProperty.call(input, 'developmentResponseLimit')) {
     validateInteger(input.developmentResponseLimit, 'developmentResponseLimit', DEVELOPMENT_MIN_RESPONSE_LIMIT, DEVELOPMENT_MAX_RESPONSE_LIMIT, errors);
   }
+  if (Object.prototype.hasOwnProperty.call(input, 'developmentReasoningEffort')) {
+    const value = input.developmentReasoningEffort;
+    if (!DEVELOPMENT_REASONING_EFFORTS.includes(value)) {
+      errors.push(`developmentReasoningEffort must be one of: ${DEVELOPMENT_REASONING_EFFORTS.join(', ')}.`);
+    }
+  }
   if (Object.prototype.hasOwnProperty.call(input, 'routineDossierDetailBudget')) {
     const value = input.routineDossierDetailBudget;
     if (value !== 'auto') {
       validateInteger(value, 'routineDossierDetailBudget', ROUTINE_DOSSIER_BUDGET_MIN, ROUTINE_DOSSIER_BUDGET_MAX, errors);
     }
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'showDossierDiagnostics') && typeof input.showDossierDiagnostics !== 'boolean') {
+    errors.push('showDossierDiagnostics must be a boolean.');
   }
   if (Object.prototype.hasOwnProperty.call(input, 'relationshipScoreCap')) {
     validateInteger(input.relationshipScoreCap, 'relationshipScoreCap', RELATIONSHIP_MIN_SCORE_CAP, RELATIONSHIP_MAX_SCORE_CAP, errors);
@@ -163,6 +176,9 @@ export function normalizeAlphaSettings(input = {}) {
   const profile = typeof source.developmentConnectionProfile === 'string' && source.developmentConnectionProfile.trim() !== ''
     ? source.developmentConnectionProfile.trim()
     : null;
+  const reasoningEffort = DEVELOPMENT_REASONING_EFFORTS.includes(source.developmentReasoningEffort)
+    ? source.developmentReasoningEffort
+    : ALPHA_SETTINGS_DEFAULTS.developmentReasoningEffort;
   const budget = source.routineDossierDetailBudget === 'auto'
     ? 'auto'
     : (Number.isInteger(source.routineDossierDetailBudget)
@@ -189,7 +205,9 @@ export function normalizeAlphaSettings(input = {}) {
       DEVELOPMENT_MIN_RESPONSE_LIMIT,
       DEVELOPMENT_MAX_RESPONSE_LIMIT,
     ),
+    developmentReasoningEffort: reasoningEffort,
     routineDossierDetailBudget: budget,
+    showDossierDiagnostics: normalizeBoolean(source.showDossierDiagnostics, ALPHA_SETTINGS_DEFAULTS.showDossierDiagnostics),
     relationshipScoreCap: normalizeInteger(
       source.relationshipScoreCap,
       ALPHA_SETTINGS_DEFAULTS.relationshipScoreCap,

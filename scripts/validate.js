@@ -3,7 +3,7 @@
  *
  * Verifies:
  * - Module imports and dependency reachability
- * - Version consistency between package.json, wire contracts, and documentation
+ * - Version consistency between package.json, wire contracts, and release documentation
  * - Canonical C02 ownership coverage
  * - Production wire examples validity
  * - Accepted S4 Development settings/queue/provider/context integration
@@ -146,19 +146,21 @@ async function runValidation() {
   }
 
   // 4. Verify version consistency
-  if (pkg.version !== '0.1.3') {
-    fail(`package.json version expected '0.1.3', got '${pkg.version}'`);
+  if (pkg.version !== '0.1.4') {
+    fail(`package.json version expected '0.1.4', got '${pkg.version}'`);
   } else {
-    pass("package.json version is '0.1.3'");
+    pass("package.json version is '0.1.4'");
   }
 
-  const devMdPath = path.join(rootDir, 'DEVELOPMENT.md');
-  if (fs.existsSync(devMdPath)) {
-    const devMd = fs.readFileSync(devMdPath, 'utf8');
-    if (!devMd.includes('0.1.3')) {
-      fail("DEVELOPMENT.md does not document package version '0.1.3'");
+  const changelogPath = path.join(rootDir, 'CHANGELOG.md');
+  if (!fs.existsSync(changelogPath)) {
+    fail('CHANGELOG.md is missing.');
+  } else {
+    const changelog = fs.readFileSync(changelogPath, 'utf8');
+    if (!changelog.includes('## [0.1.4] - 2026-09-11')) {
+      fail("CHANGELOG.md does not document application release '0.1.4'");
     } else {
-      pass("DEVELOPMENT.md version aligns with package.json ('0.1.3').");
+      pass("CHANGELOG.md release metadata aligns with package.json ('0.1.4').");
     }
   }
 
@@ -767,12 +769,12 @@ async function runValidation() {
 
   // 13. S10 release / compatibility / CI surface.
   const releaseManifest = JSON.parse(fs.readFileSync(path.join(rootDir, 'manifest.json'), 'utf8'));
-  if (pkg.version !== '0.1.3' || releaseManifest.version !== pkg.version) {
+  if (pkg.version !== '0.1.4' || releaseManifest.version !== pkg.version) {
     fail(`S10 release version mismatch: package=${pkg.version}, manifest=${releaseManifest.version}.`);
   } else if (runtime.ALPHA_SCHEMA_VERSION !== 1 || runtime.ALPHA_NATIVE_BUNDLE_VERSION !== 1) {
     fail('S10 application release must not silently bump canonical state/native format versions.');
   } else {
-    pass('S10 application version 0.1.3 is aligned while canonical state/native format remain version 1.');
+    pass('S10 application version 0.1.4 is aligned while canonical state/native format remain version 1.');
   }
 
   const releasePackageSource = fs.readFileSync(packageScriptPath, 'utf8');

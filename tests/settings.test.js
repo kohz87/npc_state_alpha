@@ -19,6 +19,8 @@ test('Settings Contract: single registry contains the complete S5 defaults', () 
   assert.equal(ALPHA_SETTINGS_DEFAULTS.routineDossierDetailBudget, 'auto');
   assert.equal(ALPHA_SETTINGS_DEFAULTS.developmentConnectionProfile, null);
   assert.equal(ALPHA_SETTINGS_DEFAULTS.developmentResponseLimit, 1600);
+  assert.equal(ALPHA_SETTINGS_DEFAULTS.developmentReasoningEffort, 'low');
+  assert.equal(ALPHA_SETTINGS_DEFAULTS.showDossierDiagnostics, false);
   assert.equal(ALPHA_SETTINGS_DEFAULTS.relationshipScoreCap, RELATIONSHIP_SCORE_CAP_DEFAULT);
   assert.equal(ALPHA_SETTINGS_DEFAULTS.relationshipScoreCap, 1000);
   assert.equal(ALPHA_SETTINGS_DEFAULTS.relationshipInertia, RELATIONSHIP_INERTIA_DEFAULT);
@@ -26,12 +28,16 @@ test('Settings Contract: single registry contains the complete S5 defaults', () 
   assert.equal(ALPHA_SETTINGS_DEFAULTS.relationshipHistoryLimit, RELATIONSHIP_HISTORY_LIMIT_DEFAULT);
   assert.equal(ALPHA_SETTINGS_DEFAULTS.relationshipHistoryLimit, 20);
   assert.ok(ALPHA_SETTING_KEYS.includes('routineDossierDetailBudget'));
+  assert.ok(ALPHA_SETTING_KEYS.includes('developmentReasoningEffort'));
+  assert.ok(ALPHA_SETTING_KEYS.includes('showDossierDiagnostics'));
   assert.ok(!ALPHA_SETTING_KEYS.includes('routineDossierBudget'));
 });
 
 test('Settings Contract: load/runtime normalization is fail-safe and bounded', () => {
   assert.equal(normalizeAlphaSettings({ developmentCadence: -2 }).developmentCadence, 1);
   assert.equal(normalizeAlphaSettings({ developmentCadence: 99 }).developmentCadence, 10);
+  assert.equal(normalizeAlphaSettings({ developmentReasoningEffort: 'bad' }).developmentReasoningEffort, 'low');
+  assert.equal(normalizeAlphaSettings({ showDossierDiagnostics: 'yes' }).showDossierDiagnostics, false);
   assert.equal(normalizeAlphaSettings({ relationshipScoreCap: 5 }).relationshipScoreCap, 10);
   assert.equal(normalizeAlphaSettings({ relationshipScoreCap: 5000 }).relationshipScoreCap, 1000);
   assert.equal(normalizeAlphaSettings({ relationshipScoreCap: 'invalid' }).relationshipScoreCap, 1000);
@@ -47,16 +53,22 @@ test('Settings Contract: explicit user input is rejected rather than silently no
   const invalid = validateAlphaSettings({
     ...ALPHA_SETTINGS_DEFAULTS,
     developmentCadence: 99,
+    developmentReasoningEffort: 'ultra',
+    showDossierDiagnostics: 'yes',
     routineDossierDetailBudget: 0,
     relationshipInertia: -1,
   }, { partial: false });
   assert.equal(invalid.valid, false);
   assert.ok(invalid.errors.some((error) => error.includes('developmentCadence')));
+  assert.ok(invalid.errors.some((error) => error.includes('developmentReasoningEffort')));
+  assert.ok(invalid.errors.some((error) => error.includes('showDossierDiagnostics')));
   assert.ok(invalid.errors.some((error) => error.includes('routineDossierDetailBudget')));
   assert.ok(invalid.errors.some((error) => error.includes('relationshipInertia')));
 
   const valid = validateAlphaSettings({
     ...ALPHA_SETTINGS_DEFAULTS,
+    developmentReasoningEffort: 'medium',
+    showDossierDiagnostics: true,
     routineDossierDetailBudget: 7,
     developmentCadence: 5,
   }, { partial: false });

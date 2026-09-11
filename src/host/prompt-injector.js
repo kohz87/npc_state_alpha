@@ -173,6 +173,7 @@ Ordinary fields are direct proposal scalars (e.g. "present":true), with one sibl
 Relationship (NPC->PLAYER): every activeInExchange:true NPC needs relationshipEvaluation. No shift: {"shifted":false,"reason":"...","source":{...}}. Shift: {"shifted":true,"impact":"minor"|"moderate"|"major","axes":{"trust":n,"affection":n,"desire":n,"tension":n},"axisSupport":{"<changed-axis>":{"reason":"...","source":{...}}}}. Axis numbers occur only inside axes; include only supported changed axes.
 Form: currentForm selects only a supplied knownForms(read-only) id; use null for an observed form with no established id.
 Lifecycle: living->dead only via lifecycle={"lifeState":"dead","cause":"...","source":{...}}. Target the actual victim; possessive/adjacent wording or explicit survival is not death. automatic resurrection is forbidden.
+Known NPC aliases: alternate names/identifiers, not alternate forms.
 Development-owned dossier fields are read-only here: relationshipDynamic, canonicalAppearance, appearanceForms, personality, behavioralProfile, speech, mannerisms, role, species, background, actualAge, apparentAge, birthday, importantMemories, nonPlayerRelationships.`;
   }
 

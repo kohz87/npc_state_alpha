@@ -8,6 +8,34 @@ The project uses semantic versioning for application releases. Canonical Alpha s
 
 No unreleased changes yet.
 
+## [0.1.4] - 2026-09-11
+
+### Added
+
+- Added a Development reasoning-effort setting. Routine Development defaults to `low`, while `auto`, `medium`, and `high` remain available when the selected Connection Manager route supports them.
+- Added direct portrait attachment from the dossier using SillyTavern's own image-upload boundary. Alpha stores only the returned host asset path in canonical state.
+- Added dossier-level Show Diagnostics / Hide Diagnostics control, with technical Development/source bookkeeping hidden by default.
+
+### Changed
+
+- Relationship Trust, Affection, Desire, and Tension now render as centered semantic meters instead of numeric-only cards while retaining the exact stored score as a label.
+- The default Current dossier surface is slimmer and closer to the Beta 0.5.x presentation: Mood, Location, Goal, Activity / condition, and Current appearance remain story-facing; technical identity/exchange/form bookkeeping moves behind diagnostics.
+- Development prompt guidance is more conservative about durable personality, behavioral-profile, speech, and mannerism updates. A single gesture, mood, wording choice, or action must not be promoted into a permanent trait without explicit or reinforced evidence.
+- Development evidence instructions now require the shared `facts.source` excerpt to directly support every fact included in that facts proposal.
+
+### Fixed
+
+- Reduced pathological Development latency caused by high hidden-reasoning budgets by requesting low reasoning through SillyTavern's supported Connection Manager request override by default.
+- Fixed the dossier having a portrait field/path but no usable image-file attachment workflow.
+
+### Compatibility
+
+- Application version is `0.1.4`.
+- Canonical state remains `npc_state_alpha.v1`, schema version `1`.
+- Native bundle format remains `npc_state_alpha.native_state`, format version `1`.
+- Immediate and Development wire versions remain `1`.
+- No persistence-schema or native-format migration is required from 0.1.3.
+
 ## [0.1.3] - 2026-09-11
 
 ### Added
