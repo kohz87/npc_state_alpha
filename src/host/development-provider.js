@@ -7,6 +7,7 @@
  */
 
 export const CONNECTION_MANAGER_SHARED_MODULE = '/scripts/extensions/shared.js';
+export const DEVELOPMENT_REASONING_EFFORT_VALUES = Object.freeze(['auto', 'low', 'medium', 'high']);
 
 export class DevelopmentProviderError extends Error {
   constructor(message, code, options = {}) {
@@ -47,6 +48,17 @@ function normalizeProfileOption(profile) {
     api: typeof profile?.api === 'string' && profile.api.trim() ? profile.api.trim() : null,
     model: typeof profile?.model === 'string' && profile.model.trim() ? profile.model.trim() : null,
   };
+}
+
+function reasoningOverride(reasoningEffort) {
+  if (reasoningEffort === undefined || reasoningEffort === null || reasoningEffort === 'auto') return {};
+  if (!DEVELOPMENT_REASONING_EFFORT_VALUES.includes(reasoningEffort)) {
+    throw new DevelopmentProviderError(
+      `Unsupported Development reasoning effort '${reasoningEffort}'.`,
+      'invalid_development_reasoning_effort',
+    );
+  }
+  return { reasoning_effort: reasoningEffort };
 }
 
 export class SillyTavernDevelopmentProvider {
@@ -125,16 +137,18 @@ export class SillyTavernDevelopmentProvider {
 
   /**
    * Sends one non-streaming bounded review request through the selected host
-   * Connection Manager profile. The AbortSignal gives foreground generation a
-   * deterministic way to yield/cancel this background request.
+   * Connection Manager profile. Alpha uses SillyTavern's documented fifth
+   * overridePayload argument to request a bounded reasoning effort while the
+   * selected profile remains the owner of provider/model/routing credentials.
    */
-  async sendReview({ profileId, prompt, maxTokens, signal }) {
+  async sendReview({ profileId, prompt, maxTokens, signal, reasoningEffort = 'low' }) {
     if (typeof profileId !== 'string' || profileId.trim() === '') {
       throw new DevelopmentProviderError('Development connection profile is not configured.', 'development_profile_required');
     }
     if (typeof prompt !== 'string' || prompt.trim() === '') {
       throw new DevelopmentProviderError('Development review prompt must be non-empty.', 'invalid_development_prompt');
     }
+    const overridePayload = reasoningOverride(reasoningEffort);
     const service = await this._service();
     // SillyTavern 1.18.0 getProfile() throws when the ID is absent. Normalize both
     // throwing and null-returning host implementations to Alpha's stable code.
@@ -166,6 +180,7 @@ export class SillyTavernDevelopmentProvider {
           includeInstruct: true,
           instructSettings: {},
         },
+        overridePayload,
       );
     } catch (error) {
       if (signal?.aborted || error?.name === 'AbortError') {
