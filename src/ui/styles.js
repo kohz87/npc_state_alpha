@@ -1,20 +1,33 @@
-/** Scoped UI styles: host text shadows and native control colors must not reduce readability. */
+/**
+ * Scoped NPC State Alpha UI styles.
+ *
+ * The opened dossier surface adapts the portrait-first visual language from
+ * npc_state_beta 0.5.x to Alpha's own DOM and canonical state. The launcher is
+ * intentionally retained. There is no runtime dependency on Beta.
+ */
 export const ALPHA_UI_STYLES = `
 #npc-state-alpha-root {
-  --alpha-bg: #151b24;
-  --alpha-surface: #1e2733;
-  --alpha-input: #111822;
-  --alpha-border: #455368;
-  --alpha-text: #edf2f8;
-  --alpha-muted: #b9c5d5;
-  --alpha-accent: #a9c8ff;
+  --alpha-bg: var(--SmartThemeBlurTintColor, #1c1c1f);
+  --alpha-text: var(--SmartThemeBodyColor, #eee);
+  --alpha-muted: color-mix(in srgb, var(--alpha-text) 66%, transparent);
+  --alpha-paper: rgba(245, 238, 220, .075);
+  --alpha-surface: rgba(255, 255, 255, .045);
+  --alpha-surface-strong: rgba(255, 255, 255, .075);
+  --alpha-input: rgba(0, 0, 0, .24);
+  --alpha-line: rgba(216, 190, 145, .22);
+  --alpha-line-strong: rgba(216, 190, 145, .5);
+  --alpha-gold: #d8bc78;
+  --alpha-gold-soft: #ead9ad;
+  --alpha-danger: #efaaaa;
+  --alpha-success: #9bd4b7;
   position: relative;
   z-index: 10000;
-  color-scheme: dark;
   color: var(--alpha-text);
-  font: 400 15px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font: 400 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
-#npc-state-alpha-root *, #npc-state-alpha-root *::before, #npc-state-alpha-root *::after {
+#npc-state-alpha-root *,
+#npc-state-alpha-root *::before,
+#npc-state-alpha-root *::after {
   box-sizing: border-box;
   text-shadow: none;
 }
@@ -22,7 +35,7 @@ export const ALPHA_UI_STYLES = `
   font: inherit;
   color: var(--alpha-text);
   background: var(--alpha-input);
-  border: 1px solid var(--alpha-border);
+  border: 1px solid var(--alpha-line);
   border-radius: 8px;
   box-shadow: none;
   filter: none;
@@ -31,120 +44,528 @@ export const ALPHA_UI_STYLES = `
   min-width: 0;
   max-width: 100%;
 }
+#npc-state-alpha-root :is(input:not([type="checkbox"]), select, textarea) {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+}
+#npc-state-alpha-root input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  accent-color: var(--alpha-gold);
+}
+#npc-state-alpha-root textarea { resize: vertical; line-height: 1.55; }
+#npc-state-alpha-root input::placeholder,
+#npc-state-alpha-root textarea::placeholder { color: var(--alpha-muted); opacity: .72; }
 #npc-state-alpha-root button {
   appearance: none;
   cursor: pointer;
-  padding: 8px 13px;
-  min-height: 40px;
-  line-height: 1.4;
+  min-height: 36px;
+  padding: 7px 12px;
+  line-height: 1.3;
   font-weight: 600;
-  background: #293649;
+  background: rgba(255, 255, 255, .055);
   white-space: normal;
 }
-#npc-state-alpha-root button:hover:not(:disabled) { background: #354761; border-color: #8aa3c8; }
-#npc-state-alpha-root button:disabled { color: #a5b0bf; background: #202833; border-color: #3a4656; cursor: not-allowed; }
-#npc-state-alpha-root :is(button, input, select, textarea, a):focus-visible { outline: 2px solid #a9c8ff; outline-offset: 3px; }
-#npc-state-alpha-root :is(input:not([type="checkbox"]), select, textarea) { padding: 9px 11px; min-height: 42px; width: 100%; }
-#npc-state-alpha-root input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 18px; accent-color: #a9c8ff; vertical-align: middle; }
-#npc-state-alpha-root textarea { resize: vertical; line-height: 1.6; }
-#npc-state-alpha-root input::placeholder, #npc-state-alpha-root textarea::placeholder { color: #9daec2; opacity: 1; }
+#npc-state-alpha-root button:hover:not(:disabled) {
+  background: rgba(216, 190, 145, .11);
+  border-color: var(--alpha-line-strong);
+}
+#npc-state-alpha-root button:disabled {
+  opacity: .48;
+  cursor: not-allowed;
+}
+#npc-state-alpha-root :is(button, input, select, textarea, a):focus-visible {
+  outline: 2px solid var(--alpha-gold);
+  outline-offset: 2px;
+}
 #npc-state-alpha-root :is(h2, h3, h4, p) { color: inherit; padding: 0; }
-#npc-state-alpha-root h2 { font-size: 24px; line-height: 1.25; margin: 0 0 6px; }
-#npc-state-alpha-root h3 { font-size: 22px; line-height: 1.35; margin: 0 0 8px; }
-#npc-state-alpha-root h4 { font-size: 16px; line-height: 1.4; margin: 0 0 14px; }
-#npc-state-alpha-root p { margin: 0 0 18px; }
+#npc-state-alpha-root h2 { font-size: 1.85rem; line-height: 1.12; margin: 0; }
+#npc-state-alpha-root h3 { font-size: 1.35rem; line-height: 1.25; margin: 0 0 6px; }
+#npc-state-alpha-root h4 { font-size: .93rem; line-height: 1.35; margin: 0 0 12px; }
+#npc-state-alpha-root p { margin: 0; }
 #npc-state-alpha-root strong { font-weight: 650; }
-#npc-state-alpha-root .alpha-launcher { position: fixed; right: 20px; bottom: 76px; border-radius: 12px; padding: 11px 17px; background: #263a55; border-color: #8aa3c8; box-shadow: 0 5px 20px #0006; }
-#npc-state-alpha-root .alpha-extension-panel { position: fixed; right: 20px; bottom: 24px; width: min(1060px, calc(100vw - 40px)); height: min(820px, calc(100dvh - 64px)); display: flex; flex-direction: column; background: var(--alpha-bg); color: var(--alpha-text); border: 1px solid var(--alpha-border); border-radius: 16px; box-shadow: 0 18px 70px #0009; overflow: hidden; }
-#npc-state-alpha-root .alpha-top-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 18px 22px; border-bottom: 1px solid var(--alpha-border); background: var(--alpha-surface); }
-#npc-state-alpha-root .alpha-brand-section { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-width: 0; }
-#npc-state-alpha-root .alpha-brand-section > strong { font-size: 20px; letter-spacing: -.3px; }
-#npc-state-alpha-root .alpha-dev-status { font-size: 13px; color: #c5d8f6; background: #29384d; padding: 4px 10px; border-radius: 20px; }
-#npc-state-alpha-root .alpha-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 22px; border-bottom: 1px solid var(--alpha-border); }
-#npc-state-alpha-root .alpha-nav-tabs, #npc-state-alpha-root .alpha-quick-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-#npc-state-alpha-root .alpha-tab-btn { background: transparent; border-color: transparent; color: var(--alpha-muted); }
-#npc-state-alpha-root .alpha-tab-btn.active { background: #2b4160; color: #f1f6ff; border-color: #86a8db; }
-#npc-state-alpha-root .alpha-btn-primary { background: #adcaff; border-color: #adcaff; color: #13223a; }
-#npc-state-alpha-root .alpha-btn-primary:hover:not(:disabled) { background: #c6daff; color: #13223a; }
-#npc-state-alpha-root .alpha-btn-danger { color: #ffc3c3; background: #46272f; border-color: #965360; }
-#npc-state-alpha-root .alpha-panel-content { overflow: auto; flex: 1; min-height: 0; padding: 22px; scrollbar-color: #657b99 var(--alpha-bg); }
-#npc-state-alpha-root .alpha-status-banner { padding: 12px 22px; border-bottom: 1px solid var(--alpha-border); overflow-wrap: anywhere; }
-#npc-state-alpha-root .alpha-status-error { color: #ffc3c3; background: #3b252d; }
-#npc-state-alpha-root .alpha-status-success { color: #b7efd1; background: #20382f; }
-#npc-state-alpha-root .alpha-status-info { color: #cadcfa; background: #24334a; }
-#npc-state-alpha-root .alpha-dossier-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 22px; min-height: 100%; }
-#npc-state-alpha-root .alpha-dossier-sidebar { border-right: 1px solid var(--alpha-border); padding-right: 18px; min-width: 0; }
-#npc-state-alpha-root .alpha-filter-bar { display: grid; gap: 10px; margin-bottom: 14px; }
-#npc-state-alpha-root .alpha-filter-selectors { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-#npc-state-alpha-root .alpha-filter-selectors select { font-size: 13px; padding: 8px 5px; }
-#npc-state-alpha-root .alpha-sidebar-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-weight: 650; }
-#npc-state-alpha-root .alpha-sidebar-heading span { color: var(--alpha-muted); font-size: 13px; font-weight: 400; }
-#npc-state-alpha-root .alpha-npc-list { display: grid; gap: 8px; }
-#npc-state-alpha-root .alpha-npc-card { display: flex; align-items: center; gap: 11px; text-align: left; padding: 12px; background: var(--alpha-surface); width: 100%; }
-#npc-state-alpha-root .alpha-npc-card.selected { background: #293c56; border-color: #9dbef1; }
-#npc-state-alpha-root .alpha-avatar-container { width: 38px; height: 38px; border-radius: 10px; overflow: hidden; display: grid; place-items: center; background: #354964; color: #e0ebff; flex: 0 0 38px; }
-#npc-state-alpha-root .alpha-avatar-img { width: 100%; height: 100%; object-fit: cover; }
-#npc-state-alpha-root .alpha-npc-summary { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
-#npc-state-alpha-root .alpha-npc-name-row, #npc-state-alpha-root .alpha-npc-meta-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; overflow-wrap: anywhere; }
-#npc-state-alpha-root .alpha-role-text { font-size: 13px; color: var(--alpha-muted); font-weight: 400; }
-#npc-state-alpha-root .alpha-badge { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 5px; padding: 2px 6px; color: #cbdaf2; background: #2c3c53; }
-#npc-state-alpha-root .status-present { background: #234338; color: #b9f3d4; }
-#npc-state-alpha-root .status-deceased, #npc-state-alpha-root .alpha-badge-danger { background: #4a2b33; color: #ffd1d1; }
-#npc-state-alpha-root .alpha-dossier-main { min-width: 0; }
-#npc-state-alpha-root .alpha-empty-detail, #npc-state-alpha-root .alpha-welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; min-height: 280px; height: 100%; padding: 32px 20px; color: var(--alpha-muted); }
-#npc-state-alpha-root .alpha-empty-detail h3, #npc-state-alpha-root .alpha-welcome h3 { color: var(--alpha-text); }
-#npc-state-alpha-root .alpha-empty-detail p, #npc-state-alpha-root .alpha-welcome p { max-width: 460px; }
-#npc-state-alpha-root .alpha-welcome-mark { color: #bfd5fc; background: #293e5b; border: 1px solid #5c789c; border-radius: 18px; padding: 12px 21px; margin-bottom: 20px; font-size: 28px; font-weight: 600; }
-#npc-state-alpha-root .alpha-no-npcs { color: var(--alpha-muted); padding: 16px 4px; font-size: 14px; }
-#npc-state-alpha-root .alpha-detail-header, #npc-state-alpha-root .alpha-editor-header, #npc-state-alpha-root .alpha-diag-header { display: flex; justify-content: space-between; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
-#npc-state-alpha-root .alpha-header-left, #npc-state-alpha-root .alpha-header-actions, #npc-state-alpha-root .alpha-diag-actions, #npc-state-alpha-root .alpha-editor-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-#npc-state-alpha-root .alpha-detail-portrait { width: 56px; height: 56px; object-fit: cover; border-radius: 10px; }
-#npc-state-alpha-root .alpha-npc-subtitle, #npc-state-alpha-root .alpha-revision-tag { color: var(--alpha-muted); font-size: 13px; overflow-wrap: anywhere; }
-#npc-state-alpha-root .alpha-section, #npc-state-alpha-root .alpha-settings-group, #npc-state-alpha-root .alpha-editor-section { border: 1px solid var(--alpha-border); border-radius: 12px; background: var(--alpha-surface); padding: 18px; margin-bottom: 18px; }
-#npc-state-alpha-root .alpha-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; }
-#npc-state-alpha-root .alpha-field-block { margin-top: 16px; }
-#npc-state-alpha-root .alpha-field-label, #npc-state-alpha-root .alpha-setting-help, #npc-state-alpha-root .alpha-help-text { font-size: 13px; line-height: 1.6; color: var(--alpha-muted); opacity: 1; }
-#npc-state-alpha-root .alpha-field-label { margin-bottom: 5px; font-weight: 600; }
-#npc-state-alpha-root .alpha-field-val, #npc-state-alpha-root .alpha-section { overflow-wrap: anywhere; }
-#npc-state-alpha-root .alpha-axes-grid, #npc-state-alpha-root .alpha-diag-stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
-#npc-state-alpha-root .alpha-axis-card, #npc-state-alpha-root .alpha-stat-card { border: 1px solid var(--alpha-border); border-radius: 9px; padding: 12px 8px; text-align: center; background: var(--alpha-input); }
-#npc-state-alpha-root .alpha-axis-name, #npc-state-alpha-root .alpha-stat-label { font-size: 12px; color: var(--alpha-muted); }
-#npc-state-alpha-root .alpha-axis-value, #npc-state-alpha-root .alpha-stat-value { font-size: 23px; font-weight: 650; color: #dce8ff; }
-#npc-state-alpha-root .alpha-axis-milestone, #npc-state-alpha-root .alpha-axis-progress { font-size: 12px; color: var(--alpha-muted); overflow-wrap: anywhere; }
-#npc-state-alpha-root .alpha-history-list { margin: 10px 0; padding-left: 22px; }
-#npc-state-alpha-root .alpha-history-list li { margin-bottom: 10px; }
-#npc-state-alpha-root .alpha-obs-item { border: 1px solid var(--alpha-border); border-radius: 8px; padding: 12px; margin-top: 10px; }
-#npc-state-alpha-root .alpha-obs-header { display: flex; flex-wrap: wrap; gap: 10px; font-size: 13px; color: var(--alpha-muted); }
-#npc-state-alpha-root .alpha-editor-container, #npc-state-alpha-root .alpha-settings-container, #npc-state-alpha-root .alpha-diagnostics-container { max-width: 900px; margin: auto; }
-#npc-state-alpha-root .alpha-settings-desc { color: var(--alpha-muted); }
-#npc-state-alpha-root .alpha-setting-row { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(160px, 1fr); column-gap: 24px; row-gap: 7px; padding: 16px 0; border-top: 1px solid #354255; align-items: center; }
-#npc-state-alpha-root .alpha-setting-row .alpha-setting-help { grid-column: 1 / -1; max-width: 720px; }
-#npc-state-alpha-root .alpha-checkbox-label { display: flex; align-items: center; gap: 10px; grid-column: 1 / -1; cursor: pointer; }
-#npc-state-alpha-root .alpha-form-group { margin-bottom: 18px; }
-#npc-state-alpha-root .alpha-form-label, #npc-state-alpha-root .alpha-setting-label { font-weight: 600; display: block; }
-#npc-state-alpha-root .alpha-form-label-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 7px; }
-#npc-state-alpha-root .alpha-lock-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--alpha-muted); margin: 4px 8px 4px 0; }
-#npc-state-alpha-root .alpha-settings-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; padding: 12px 0; }
-#npc-state-alpha-root .alpha-settings-feedback { padding: 12px; border-radius: 8px; }
-#npc-state-alpha-root .alpha-diag-filters { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 18px; }
-#npc-state-alpha-root .alpha-diag-filters label { flex: 1; min-width: 180px; }
-#npc-state-alpha-root .alpha-diag-table-wrap { overflow: auto; border: 1px solid var(--alpha-border); border-radius: 10px; }
-#npc-state-alpha-root .alpha-diag-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-#npc-state-alpha-root .alpha-diag-table :is(th, td) { padding: 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--alpha-border); }
-#npc-state-alpha-root .alpha-diag-table th { background: #263246; color: #e3ecfa; }
-#npc-state-alpha-root .alpha-diag-table code { color: #cad8ed; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Existing side launcher intentionally retained. */
+#npc-state-alpha-root .alpha-launcher {
+  position: fixed;
+  right: 20px;
+  bottom: 76px;
+  border-radius: 12px;
+  padding: 11px 17px;
+  background: #263a55;
+  border-color: #8aa3c8;
+  box-shadow: 0 5px 20px #0006;
+}
+
+/* Beta 0.5-style centered dossier shell. */
+#npc-state-alpha-root .alpha-extension-panel {
+  position: fixed;
+  z-index: 2147483500;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(1320px, 97vw);
+  height: min(940px, 96dvh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--alpha-text);
+  background: var(--alpha-bg);
+  border: 1px solid var(--alpha-line);
+  border-radius: 15px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .72), 0 20px 70px rgba(0, 0, 0, .55);
+}
+#npc-state-alpha-root .alpha-top-bar {
+  flex: 0 0 auto;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px 8px 15px;
+  border-bottom: 1px solid var(--alpha-line);
+  background: color-mix(in srgb, var(--alpha-bg) 94%, black 6%);
+}
+#npc-state-alpha-root .alpha-brand-section,
+#npc-state-alpha-root .alpha-brand-copy,
+#npc-state-alpha-root .alpha-header-left,
+#npc-state-alpha-root .alpha-header-actions,
+#npc-state-alpha-root .alpha-diag-actions,
+#npc-state-alpha-root .alpha-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+#npc-state-alpha-root .alpha-brand-copy { align-items: baseline; }
+#npc-state-alpha-root .alpha-brand-copy > strong { font-size: 1.03rem; white-space: nowrap; }
+#npc-state-alpha-root .alpha-kicker {
+  display: inline-block;
+  font-size: .68rem;
+  line-height: 1.2;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--alpha-gold);
+  opacity: .78;
+}
+#npc-state-alpha-root .alpha-dev-status {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 4px 9px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 999px;
+  color: var(--alpha-muted);
+  background: rgba(0, 0, 0, .16);
+  font-size: .74rem;
+  overflow-wrap: anywhere;
+}
+#npc-state-alpha-root .alpha-close {
+  flex: 0 0 auto;
+  min-width: 66px;
+  border-color: var(--alpha-line);
+  background: rgba(0, 0, 0, .12);
+}
+#npc-state-alpha-root .alpha-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(216, 190, 145, .13);
+  background: rgba(0, 0, 0, .08);
+}
+#npc-state-alpha-root .alpha-nav-tabs,
+#npc-state-alpha-root .alpha-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#npc-state-alpha-root .alpha-tab-btn {
+  min-height: 32px;
+  padding: 5px 10px;
+  color: var(--alpha-muted);
+  background: transparent;
+  border-color: transparent;
+}
+#npc-state-alpha-root .alpha-tab-btn.active {
+  color: var(--alpha-gold-soft);
+  background: rgba(216, 190, 145, .08);
+  border-color: var(--alpha-line);
+}
+#npc-state-alpha-root .alpha-btn-primary {
+  color: #201a0f;
+  background: var(--alpha-gold);
+  border-color: var(--alpha-gold);
+}
+#npc-state-alpha-root .alpha-btn-primary:hover:not(:disabled) {
+  color: #17130b;
+  background: var(--alpha-gold-soft);
+  border-color: var(--alpha-gold-soft);
+}
+#npc-state-alpha-root .alpha-btn-danger {
+  color: #ffd4d4;
+  background: rgba(126, 48, 56, .42);
+  border-color: rgba(224, 113, 122, .42);
+}
+#npc-state-alpha-root .alpha-panel-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  background: rgba(0, 0, 0, .025);
+}
+#npc-state-alpha-root .alpha-status-banner {
+  flex: 0 0 auto;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--alpha-line);
+  overflow-wrap: anywhere;
+}
+#npc-state-alpha-root .alpha-status-error { color: #ffd1d1; background: rgba(112, 45, 51, .42); }
+#npc-state-alpha-root .alpha-status-success { color: #c8f0d9; background: rgba(42, 101, 72, .33); }
+#npc-state-alpha-root .alpha-status-info { color: #e5dcc4; background: rgba(113, 93, 51, .27); }
+
+/* Portrait-first dossier library. */
+#npc-state-alpha-root .alpha-dossier-library {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+#npc-state-alpha-root .alpha-dossier-stage { min-height: 0; overflow: hidden; }
+#npc-state-alpha-root .alpha-dossier-spread {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(320px, 36%) minmax(0, 1fr);
+  overflow: hidden;
+}
+#npc-state-alpha-root .alpha-dossier-hero {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+  border-right: 1px solid rgba(216, 190, 145, .16);
+  background: rgba(0, 0, 0, .25);
+}
+#npc-state-alpha-root .alpha-hero-media {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background: rgba(0, 0, 0, .28);
+}
+#npc-state-alpha-root .alpha-hero-portrait {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center 18%;
+}
+#npc-state-alpha-root .alpha-hero-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 30%, rgba(216, 190, 145, .16), rgba(0, 0, 0, .18));
+  color: var(--alpha-gold);
+  font-family: Georgia, "Times New Roman", serif;
+}
+#npc-state-alpha-root .alpha-hero-placeholder span { font-size: clamp(4rem, 8vw, 7rem); opacity: .62; }
+#npc-state-alpha-root .alpha-hero-caption {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 100px 24px 22px;
+  background: linear-gradient(to bottom, rgba(5, 6, 8, 0), rgba(5, 6, 8, .62) 43%, rgba(5, 6, 8, .94) 100%);
+  color: #f4f1e9;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, .92);
+}
+#npc-state-alpha-root .alpha-hero-caption h2 {
+  margin: 4px 0 5px;
+  color: #fff4d7;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.7rem, 2.4vw, 2.2rem);
+}
+#npc-state-alpha-root .alpha-hero-caption p { max-width: 38ch; color: rgba(244, 241, 233, .84); }
+#npc-state-alpha-root .alpha-hero-badges { display: flex; flex-wrap: wrap; gap: 5px 7px; margin-top: 10px; }
+#npc-state-alpha-root .alpha-hero-actions {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 7px;
+  padding: 9px;
+  border-top: 1px solid rgba(216, 190, 145, .12);
+  background: color-mix(in srgb, var(--alpha-bg) 90%, black 10%);
+}
+#npc-state-alpha-root .alpha-hero-actions .alpha-btn-edit { grid-column: 1 / -1; }
+#npc-state-alpha-root .alpha-dossier-document {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 22px clamp(18px, 2.2vw, 30px) 34px;
+  scrollbar-color: rgba(216, 190, 145, .35) transparent;
+}
+#npc-state-alpha-root .alpha-dossier-document-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 15px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--alpha-line);
+}
+#npc-state-alpha-root .alpha-npc-subtitle,
+#npc-state-alpha-root .alpha-revision-tag { color: var(--alpha-muted); font-size: .77rem; overflow-wrap: anywhere; }
+#npc-state-alpha-root .alpha-section,
+#npc-state-alpha-root .alpha-settings-group,
+#npc-state-alpha-root .alpha-editor-section {
+  margin: 0 0 14px;
+  padding: 14px 15px;
+  border: 1px solid rgba(216, 190, 145, .14);
+  border-radius: 10px;
+  background: var(--alpha-surface);
+}
+#npc-state-alpha-root .alpha-section-title,
+#npc-state-alpha-root .alpha-group-title,
+#npc-state-alpha-root .alpha-section-heading {
+  color: var(--alpha-gold-soft);
+  font-family: Georgia, "Times New Roman", serif;
+  letter-spacing: .015em;
+}
+#npc-state-alpha-root .alpha-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+#npc-state-alpha-root .alpha-fact-grid > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 9px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .028);
+}
+#npc-state-alpha-root .alpha-fact-grid > div > strong { color: var(--alpha-muted); font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+#npc-state-alpha-root .alpha-field-block { margin-top: 13px; }
+#npc-state-alpha-root .alpha-field-label,
+#npc-state-alpha-root .alpha-setting-help,
+#npc-state-alpha-root .alpha-help-text { color: var(--alpha-muted); font-size: .78rem; line-height: 1.55; opacity: 1; }
+#npc-state-alpha-root .alpha-field-label { margin-bottom: 4px; font-weight: 650; }
+#npc-state-alpha-root .alpha-field-val,
+#npc-state-alpha-root .alpha-section { overflow-wrap: anywhere; }
+#npc-state-alpha-root .alpha-axes-grid,
+#npc-state-alpha-root .alpha-diag-stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0 14px; }
+#npc-state-alpha-root .alpha-axis-card,
+#npc-state-alpha-root .alpha-stat-card {
+  min-width: 0;
+  padding: 10px 7px;
+  text-align: center;
+  border: 1px solid rgba(216, 190, 145, .15);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .15);
+}
+#npc-state-alpha-root .alpha-axis-name,
+#npc-state-alpha-root .alpha-stat-label { color: var(--alpha-muted); font-size: .67rem; letter-spacing: .06em; }
+#npc-state-alpha-root .alpha-axis-value,
+#npc-state-alpha-root .alpha-stat-value { color: var(--alpha-gold-soft); font-family: Georgia, "Times New Roman", serif; font-size: 1.35rem; font-weight: 600; }
+#npc-state-alpha-root .alpha-axis-milestone,
+#npc-state-alpha-root .alpha-axis-progress { color: var(--alpha-muted); font-size: .68rem; overflow-wrap: anywhere; }
+#npc-state-alpha-root .alpha-history-list { margin: 8px 0 0; padding-left: 20px; }
+#npc-state-alpha-root .alpha-history-list li { margin-bottom: 7px; }
+#npc-state-alpha-root .alpha-obs-item { margin-top: 8px; padding: 10px; border: 1px solid rgba(216, 190, 145, .13); border-radius: 8px; background: rgba(0, 0, 0, .1); }
+#npc-state-alpha-root .alpha-obs-header { display: flex; flex-wrap: wrap; gap: 8px; color: var(--alpha-muted); font-size: .72rem; }
+#npc-state-alpha-root .alpha-obs-body { margin-top: 5px; }
+#npc-state-alpha-root .alpha-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 7px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 999px;
+  color: var(--alpha-muted);
+  background: rgba(0, 0, 0, .24);
+  font-size: .68rem;
+  font-weight: 600;
+}
+#npc-state-alpha-root .status-present { color: #92d7b1; }
+#npc-state-alpha-root .status-offscreen { color: #aab7c6; }
+#npc-state-alpha-root .status-deceased,
+#npc-state-alpha-root .alpha-badge-danger { color: #e4aaa9; }
+#npc-state-alpha-root .alpha-badge-pending { color: #e5ca8d; }
+
+/* Bottom cast dock and rail. */
+#npc-state-alpha-root .alpha-cast-dock {
+  flex: 0 0 auto;
+  min-height: 146px;
+  padding: 9px 12px 11px;
+  border-top: 1px solid var(--alpha-line);
+  background: color-mix(in srgb, var(--alpha-bg) 93%, black 7%);
+}
+#npc-state-alpha-root .alpha-cast-dock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+#npc-state-alpha-root .alpha-cast-title { display: flex; align-items: baseline; gap: 9px; white-space: nowrap; }
+#npc-state-alpha-root .alpha-cast-count { color: var(--alpha-muted); font-size: .72rem; }
+#npc-state-alpha-root .alpha-filter-bar { display: flex; align-items: center; justify-content: flex-end; gap: 7px; min-width: 0; width: min(650px, 70%); }
+#npc-state-alpha-root .alpha-cast-search { position: relative; flex: 1 1 260px; min-width: 150px; }
+#npc-state-alpha-root .alpha-cast-search > span { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--alpha-muted); pointer-events: none; }
+#npc-state-alpha-root .alpha-cast-search input { padding-left: 28px; }
+#npc-state-alpha-root .alpha-filter-selectors { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; flex: 0 1 300px; }
+#npc-state-alpha-root .alpha-filter-selectors select { min-height: 34px; padding: 6px 8px; font-size: .75rem; }
+#npc-state-alpha-root .alpha-cast-rail {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 1px 1px 4px;
+  scroll-snap-type: x proximity;
+  scrollbar-color: rgba(216, 190, 145, .28) transparent;
+}
+#npc-state-alpha-root .alpha-npc-card {
+  position: relative;
+  flex: 0 0 152px;
+  width: 152px;
+  height: 86px;
+  min-height: 86px;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  scroll-snap-align: start;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .045);
+}
+#npc-state-alpha-root .alpha-npc-card.selected { border-color: var(--alpha-gold); box-shadow: inset 0 0 0 1px var(--alpha-gold); }
+#npc-state-alpha-root .alpha-cast-portrait,
+#npc-state-alpha-root .alpha-cast-portrait-img,
+#npc-state-alpha-root .alpha-cast-portrait-fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
+#npc-state-alpha-root .alpha-cast-portrait-img { object-fit: cover; object-position: center 22%; }
+#npc-state-alpha-root .alpha-cast-portrait-fallback { display: grid; place-items: center; color: var(--alpha-gold); background: radial-gradient(circle at 50% 30%, rgba(216, 190, 145, .16), rgba(0, 0, 0, .2)); font-family: Georgia, "Times New Roman", serif; font-size: 2rem; }
+#npc-state-alpha-root .alpha-cast-overlay {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 24px 8px 7px;
+  color: #f5f1e7;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .9));
+}
+#npc-state-alpha-root .alpha-npc-name-row { display: flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; }
+#npc-state-alpha-root .alpha-npc-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#npc-state-alpha-root .alpha-pending-mark { color: var(--alpha-gold); font-size: .58rem; }
+#npc-state-alpha-root .alpha-role-text { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(245, 241, 231, .7); font-size: .67rem; }
+#npc-state-alpha-root .alpha-cast-overlay .alpha-badge { padding: 1px 5px; border-color: rgba(255, 255, 255, .12); font-size: .6rem; }
+#npc-state-alpha-root .alpha-no-npcs { flex: 1 0 100%; display: grid; place-items: center; min-height: 78px; color: var(--alpha-muted); }
+
+/* Settings, diagnostics, editor. */
+#npc-state-alpha-root .alpha-settings-container,
+#npc-state-alpha-root .alpha-diagnostics-container,
+#npc-state-alpha-root .alpha-editor-container {
+  height: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 22px clamp(16px, 2.5vw, 28px) 34px;
+  overflow: auto;
+  scrollbar-color: rgba(216, 190, 145, .3) transparent;
+}
+#npc-state-alpha-root .alpha-view-heading { margin-bottom: 18px; }
+#npc-state-alpha-root .alpha-view-heading h3 { margin-top: 4px; font-family: Georgia, "Times New Roman", serif; color: var(--alpha-gold-soft); }
+#npc-state-alpha-root .alpha-settings-desc { max-width: 70ch; color: var(--alpha-muted); }
+#npc-state-alpha-root .alpha-settings-group,
+#npc-state-alpha-root .alpha-editor-section { padding: 0; overflow: hidden; }
+#npc-state-alpha-root .alpha-settings-group > h4,
+#npc-state-alpha-root .alpha-editor-section > h4 { margin: 0; padding: 11px 14px; border-bottom: 1px solid rgba(216, 190, 145, .13); background: rgba(0, 0, 0, .1); }
+#npc-state-alpha-root .alpha-setting-row {
+  display: grid;
+  grid-template-columns: minmax(230px, 1fr) minmax(190px, 280px);
+  gap: 18px;
+  align-items: center;
+  padding: 12px 14px;
+  border-top: 1px solid rgba(255, 255, 255, .055);
+}
+#npc-state-alpha-root .alpha-settings-group > .alpha-setting-row:first-of-type { border-top: 0; }
+#npc-state-alpha-root .alpha-setting-label,
+#npc-state-alpha-root .alpha-form-label { display: block; margin-bottom: 3px; font-weight: 650; }
+#npc-state-alpha-root .alpha-switch-label { justify-self: end; display: inline-flex; align-items: center; gap: 8px; color: var(--alpha-muted); cursor: pointer; }
+#npc-state-alpha-root .alpha-profile-setting-row select { border-color: rgba(216, 190, 145, .34); }
+#npc-state-alpha-root .alpha-settings-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 4px 0 12px; }
+#npc-state-alpha-root .alpha-settings-feedback,
+#npc-state-alpha-root .alpha-editor-status { padding: 10px 12px; border-radius: 8px; }
+#npc-state-alpha-root .alpha-form-group { margin: 0; padding: 12px 14px; border-top: 1px solid rgba(255, 255, 255, .05); }
+#npc-state-alpha-root .alpha-editor-section .alpha-form-group:first-of-type { border-top: 0; }
+#npc-state-alpha-root .alpha-form-label-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 5px; }
+#npc-state-alpha-root .alpha-lock-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--alpha-muted); font-size: .74rem; cursor: pointer; }
+#npc-state-alpha-root .alpha-editor-header,
+#npc-state-alpha-root .alpha-diag-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+#npc-state-alpha-root .alpha-editor-header h3,
+#npc-state-alpha-root .alpha-diag-header h3 { font-family: Georgia, "Times New Roman", serif; color: var(--alpha-gold-soft); }
+#npc-state-alpha-root .alpha-editor-actions { justify-content: space-between; margin-top: 12px; }
+#npc-state-alpha-root .alpha-editor-actions > div { display: flex; gap: 7px; }
+#npc-state-alpha-root .alpha-diag-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+#npc-state-alpha-root .alpha-diag-filters label { flex: 1 1 190px; }
+#npc-state-alpha-root .alpha-diag-table-wrap { overflow: auto; border: 1px solid var(--alpha-line); border-radius: 9px; }
+#npc-state-alpha-root .alpha-diag-table { width: 100%; border-collapse: collapse; font-size: .76rem; }
+#npc-state-alpha-root .alpha-diag-table :is(th, td) { padding: 9px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid rgba(216, 190, 145, .12); }
+#npc-state-alpha-root .alpha-diag-table th { color: var(--alpha-gold-soft); background: rgba(0, 0, 0, .18); }
+#npc-state-alpha-root .alpha-diag-table code { color: var(--alpha-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+#npc-state-alpha-root .alpha-empty-detail,
+#npc-state-alpha-root .alpha-welcome { height: 100%; min-height: 280px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 28px 20px; text-align: center; color: var(--alpha-muted); }
+#npc-state-alpha-root .alpha-empty-detail h3,
+#npc-state-alpha-root .alpha-welcome h3 { color: var(--alpha-gold-soft); font-family: Georgia, "Times New Roman", serif; }
+#npc-state-alpha-root .alpha-empty-detail p,
+#npc-state-alpha-root .alpha-welcome p { max-width: 480px; }
+#npc-state-alpha-root .alpha-welcome-mark { display: grid; place-items: center; width: 64px; height: 64px; margin-bottom: 4px; border: 1px solid var(--alpha-line); border-radius: 999px; color: var(--alpha-gold); background: radial-gradient(circle, rgba(216, 190, 145, .14), rgba(0, 0, 0, .1)); font-family: Georgia, "Times New Roman", serif; font-size: 1.8rem; }
+
+@media (max-width: 900px) {
+  #npc-state-alpha-root .alpha-dossier-spread { grid-template-columns: minmax(270px, 38%) minmax(0, 1fr); }
+  #npc-state-alpha-root .alpha-filter-bar { width: min(600px, 74%); }
+  #npc-state-alpha-root .alpha-axes-grid,
+  #npc-state-alpha-root .alpha-diag-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (max-width: 760px) {
-  #npc-state-alpha-root .alpha-extension-panel { inset: 10px; width: auto; height: auto; border-radius: 12px; }
-  #npc-state-alpha-root .alpha-top-bar, #npc-state-alpha-root .alpha-toolbar { padding: 12px; gap: 10px; }
-  #npc-state-alpha-root .alpha-panel-content { padding: 14px; }
-  #npc-state-alpha-root .alpha-dossier-layout { grid-template-columns: minmax(0, 1fr); }
-  #npc-state-alpha-root .alpha-dossier-sidebar { border-right: 0; border-bottom: 1px solid var(--alpha-border); padding: 0 0 16px; }
-  #npc-state-alpha-root .alpha-npc-list { max-height: 220px; overflow: auto; }
-  #npc-state-alpha-root .alpha-setting-row { grid-template-columns: minmax(0, 1fr); }
-  #npc-state-alpha-root .alpha-axes-grid, #npc-state-alpha-root .alpha-diag-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #npc-state-alpha-root .alpha-grid-2 { grid-template-columns: minmax(0, 1fr); }
-  #npc-state-alpha-root .alpha-brand-section > strong { font-size: 18px; }
-  #npc-state-alpha-root .alpha-dev-status { font-size: 12px; }
+  #npc-state-alpha-root .alpha-extension-panel { width: calc(100vw - 12px); height: calc(100dvh - 12px); border-radius: 11px; }
+  #npc-state-alpha-root .alpha-top-bar { min-height: 48px; padding: 7px 9px; }
+  #npc-state-alpha-root .alpha-brand-copy .alpha-kicker { display: none; }
+  #npc-state-alpha-root .alpha-brand-section { gap: 6px; }
+  #npc-state-alpha-root .alpha-dev-status { font-size: .66rem; }
+  #npc-state-alpha-root .alpha-toolbar { align-items: flex-start; padding: 6px 8px; }
   #npc-state-alpha-root .alpha-quick-actions { width: 100%; }
+  #npc-state-alpha-root .alpha-quick-actions button { flex: 1 1 auto; }
+  #npc-state-alpha-root .alpha-dossier-spread { grid-template-columns: 1fr; grid-template-rows: minmax(220px, 38vh) minmax(0, 1fr); }
+  #npc-state-alpha-root .alpha-dossier-hero { grid-template-rows: minmax(0, 1fr) auto; border-right: 0; border-bottom: 1px solid var(--alpha-line); }
+  #npc-state-alpha-root .alpha-hero-caption { padding: 65px 16px 14px; }
+  #npc-state-alpha-root .alpha-hero-caption h2 { font-size: 1.55rem; }
+  #npc-state-alpha-root .alpha-hero-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 6px; }
+  #npc-state-alpha-root .alpha-hero-actions .alpha-btn-edit { grid-column: auto; }
+  #npc-state-alpha-root .alpha-hero-actions button { min-height: 34px; padding: 5px 6px; font-size: .72rem; }
+  #npc-state-alpha-root .alpha-dossier-document { padding: 14px 12px 26px; }
+  #npc-state-alpha-root .alpha-cast-dock { min-height: 150px; padding: 7px 8px 9px; }
+  #npc-state-alpha-root .alpha-cast-dock-head { align-items: flex-start; flex-direction: column; gap: 5px; }
+  #npc-state-alpha-root .alpha-filter-bar { width: 100%; }
+  #npc-state-alpha-root .alpha-cast-title { width: 100%; }
+  #npc-state-alpha-root .alpha-npc-card { flex-basis: 130px; width: 130px; }
+  #npc-state-alpha-root .alpha-setting-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  #npc-state-alpha-root .alpha-switch-label { justify-self: start; }
+  #npc-state-alpha-root .alpha-grid-2 { grid-template-columns: minmax(0, 1fr); }
+  #npc-state-alpha-root .alpha-settings-container,
+  #npc-state-alpha-root .alpha-diagnostics-container,
+  #npc-state-alpha-root .alpha-editor-container { padding: 14px 12px 26px; }
 }
 `;
